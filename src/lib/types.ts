@@ -9,6 +9,7 @@ export type SourcePage = {
 export type DocumentInput = {
   sessionId: string | null;
   chatId: string | null;
+  folderId: string | null;
   title: string;
   sourceType: SourceType;
   pages: SourcePage[];

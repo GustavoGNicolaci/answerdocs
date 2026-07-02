@@ -57,6 +57,7 @@ const CHAT_HISTORY_TURN_LIMIT = 6;
 const COPY_FEEDBACK_TIMEOUT_MS = 1_600;
 const PASTED_CONTEXT_MIN_CHARACTERS = 350;
 const PASTED_CONTEXT_MIN_LINES = 3;
+const SIDEBAR_LIST_LIMIT = 2;
 const PASTED_PDF_ERROR =
   "Could not process the pasted PDF. Try uploading it or dragging it into the chat.";
 
@@ -133,6 +134,8 @@ export function RagWorkspace() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isDocumentsExpanded, setIsDocumentsExpanded] = useState(false);
+  const [isChatsExpanded, setIsChatsExpanded] = useState(false);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [uploadMode, setUploadMode] = useState<UploadMode>("file");
@@ -173,6 +176,20 @@ export function RagWorkspace() {
         : chats,
     [activeFolderId, chats],
   );
+  const visibleDocuments = isDocumentsExpanded
+    ? documents
+    : documents.slice(0, SIDEBAR_LIST_LIMIT);
+  const visibleSidebarChats = isChatsExpanded
+    ? visibleChats
+    : visibleChats.slice(0, SIDEBAR_LIST_LIMIT);
+  const hiddenDocumentCount = Math.max(
+    documents.length - SIDEBAR_LIST_LIMIT,
+    0,
+  );
+  const hiddenChatCount = Math.max(
+    visibleChats.length - SIDEBAR_LIST_LIMIT,
+    0,
+  );
   const isInitialChat = turns.length === 0 && !asking;
   const canSubmitQuestion =
     (isAuthenticated ? Boolean(activeChatId) : Boolean(sessionId)) &&
@@ -180,7 +197,23 @@ export function RagWorkspace() {
     !uploadingChatAttachment &&
     question.trim().length > 0;
   const documentControlsDisabled =
-    uploading || !sessionId || (isAuthenticated && !activeChatId);
+    uploading || !sessionId || (isAuthenticated && !activeFolderId);
+
+  function toggleDocumentsExpanded() {
+    setIsDocumentsExpanded((current) => {
+      const nextExpanded = !current;
+      if (nextExpanded) setIsChatsExpanded(false);
+      return nextExpanded;
+    });
+  }
+
+  function toggleChatsExpanded() {
+    setIsChatsExpanded((current) => {
+      const nextExpanded = !current;
+      if (nextExpanded) setIsDocumentsExpanded(false);
+      return nextExpanded;
+    });
+  }
 
   async function loadAuthSession() {
     try {
@@ -253,18 +286,24 @@ export function RagWorkspace() {
     }
   }
 
-  async function loadDocuments(scope: { sessionId?: string; chatId?: string }) {
+  async function loadDocuments(scope: {
+    sessionId?: string;
+    folderId?: string;
+    chatId?: string;
+  }) {
     try {
-      const query = scope.chatId
-        ? `chatId=${encodeURIComponent(scope.chatId)}`
-        : `sessionId=${encodeURIComponent(scope.sessionId ?? "")}`;
+      const query = scope.folderId
+        ? `folderId=${encodeURIComponent(scope.folderId)}`
+        : scope.chatId
+          ? `chatId=${encodeURIComponent(scope.chatId)}`
+          : `sessionId=${encodeURIComponent(scope.sessionId ?? "")}`;
       const response = await fetch(`/api/documents?${query}`, {
         cache: "no-store",
       });
       const payload = await readPayload<{ documents: DocumentItem[] }>(response);
       setDocuments(payload.documents);
       setSelectedDocumentIds(
-        scope.chatId
+        scope.folderId || scope.chatId
           ? payload.documents
               .filter((document) => document.status === "ready" && document.selected)
               .map((document) => document.id)
@@ -337,15 +376,26 @@ export function RagWorkspace() {
 
     const timer = window.setTimeout(() => {
       setTurns([]);
-      setDocuments([]);
-      setSelectedDocumentIds([]);
-      setLoadingDocuments(true);
-      void loadDocuments({ chatId: activeChatId });
       void loadSavedMessages(activeChatId);
     }, 0);
 
     return () => window.clearTimeout(timer);
   }, [activeChatId, authUserId]);
+
+  useEffect(() => {
+    if (!authUserId || !activeFolderId) return;
+
+    const timer = window.setTimeout(() => {
+      setIsDocumentsExpanded(false);
+      setIsChatsExpanded(false);
+      setDocuments([]);
+      setSelectedDocumentIds([]);
+      setLoadingDocuments(true);
+      void loadDocuments({ folderId: activeFolderId });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [activeFolderId, authUserId]);
 
   useEffect(() => {
     if (!authUserId || !activeFolderId) return;
@@ -362,9 +412,6 @@ export function RagWorkspace() {
 
       if (!nextChat) {
         setTurns([]);
-        setDocuments([]);
-        setSelectedDocumentIds([]);
-        setLoadingDocuments(false);
       }
     }, 0);
 
@@ -391,13 +438,13 @@ export function RagWorkspace() {
     if (!sessionId) {
       throw new Error("The chat session is not ready yet.");
     }
-    if (isAuthenticated && !activeChatId) {
-      throw new Error("Open a saved chat before adding documents.");
+    if (isAuthenticated && !activeFolderId) {
+      throw new Error("Open a folder before adding documents.");
     }
 
     const formData = new FormData();
-    if (isAuthenticated && activeChatId) {
-      formData.append("chatId", activeChatId);
+    if (isAuthenticated && activeFolderId) {
+      formData.append("folderId", activeFolderId);
     } else {
       formData.append("sessionId", sessionId);
     }
@@ -455,12 +502,12 @@ export function RagWorkspace() {
 
     try {
       if (!sessionId) throw new Error("The chat session is not ready yet.");
-      if (isAuthenticated && !activeChatId) {
-        throw new Error("Open a saved chat before deleting documents.");
+      if (isAuthenticated && !activeFolderId) {
+        throw new Error("Open a folder before deleting documents.");
       }
 
       const query = isAuthenticated
-        ? `chatId=${encodeURIComponent(activeChatId ?? "")}`
+        ? `folderId=${encodeURIComponent(activeFolderId ?? "")}`
         : `sessionId=${encodeURIComponent(sessionId)}`;
       const response = await fetch(
         `/api/documents/${documentId}?${query}`,
@@ -692,7 +739,7 @@ export function RagWorkspace() {
   async function handleDeleteChat(chat: SavedChatItem) {
     if (
       !window.confirm(
-        `Delete "${chat.title}" and its messages and documents?`,
+        `Delete "${chat.title}" and its messages? Folder documents will stay available.`,
       )
     ) {
       return;
@@ -730,7 +777,7 @@ export function RagWorkspace() {
         file: nextFile,
         title: nextFile.name,
       });
-      setNotice(`Added "${uploadedDocument.title}" to this chat.`);
+      setNotice(`Added "${uploadedDocument.title}" to this folder.`);
     } catch (requestError) {
       setError(getClientError(requestError));
     } finally {
@@ -746,9 +793,9 @@ export function RagWorkspace() {
     try {
       const uploadedDocument = await indexDocument({
         text,
-        title: "Pasted chat context",
+        title: "Pasted document context",
       });
-      setNotice(`Added "${uploadedDocument.title}" to this chat.`);
+      setNotice(`Added "${uploadedDocument.title}" to this folder.`);
     } catch (requestError) {
       setError(getClientError(requestError));
     } finally {
@@ -831,12 +878,12 @@ export function RagWorkspace() {
   }
 
   async function persistDocumentSelection(documentId: string, selected: boolean) {
-    if (!isAuthenticated || !activeChatId) return;
+    if (!isAuthenticated || !activeFolderId) return;
 
     const response = await fetch(`/api/documents/${documentId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId: activeChatId, selected }),
+      body: JSON.stringify({ folderId: activeFolderId, selected }),
     });
     await readPayload(response);
   }
@@ -845,12 +892,12 @@ export function RagWorkspace() {
     documentIds: string[],
     selected: boolean,
   ) {
-    if (!isAuthenticated || !activeChatId || documentIds.length === 0) return;
+    if (!isAuthenticated || !activeFolderId || documentIds.length === 0) return;
 
     const response = await fetch("/api/documents", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId: activeChatId, documentIds, selected }),
+      body: JSON.stringify({ folderId: activeFolderId, documentIds, selected }),
     });
     await readPayload(response);
   }
@@ -935,8 +982,20 @@ export function RagWorkspace() {
   return (
     <main className="h-dvh overflow-hidden bg-background text-foreground">
       <div className="grid h-dvh w-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-        <header className="z-20 flex min-h-16 items-center gap-3 border-b border-border/80 bg-background/90 px-3 py-2 shadow-[var(--shadow-subtle)] backdrop-blur sm:px-5">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+        <header
+          className={cn(
+            "z-20 grid border-b border-border/80 bg-background/90 shadow-[var(--shadow-subtle)] backdrop-blur transition-[grid-template-columns] duration-300 ease-out lg:min-h-16",
+            isSidebarCollapsed
+              ? "lg:grid-cols-[72px_minmax(0,1fr)]"
+              : "lg:grid-cols-[380px_minmax(0,1fr)]",
+          )}
+        >
+          <div
+            className={cn(
+              "flex items-center border-b border-border/80 bg-card/80 px-3 py-2 sm:px-5 lg:border-b-0 lg:border-r",
+              isSidebarCollapsed && "lg:justify-center lg:px-3",
+            )}
+          >
             <Link
               href="/"
               className="flex shrink-0 items-center gap-2 rounded-2xl px-1 py-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring"
@@ -944,13 +1003,18 @@ export function RagWorkspace() {
               <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
                 <Sparkles className="h-4 w-4" />
               </span>
-              <span className="hidden text-base font-semibold tracking-tight sm:inline">
+              <span
+                className={cn(
+                  "hidden text-base font-semibold tracking-tight sm:inline",
+                  isSidebarCollapsed && "lg:hidden",
+                )}
+              >
                 AnswerDocs
               </span>
             </Link>
+          </div>
 
-            <div className="hidden h-8 w-px bg-border/80 md:block" />
-
+          <div className="flex min-w-0 items-center gap-3 px-3 py-2 sm:px-5">
             <nav
               aria-label="Folders"
               className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1"
@@ -1035,43 +1099,43 @@ export function RagWorkspace() {
                 </div>
               )}
             </nav>
-          </div>
 
-          <div className="shrink-0">
-            {isAuthenticated ? (
-              <details className="group/account relative">
-                <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-border/80 bg-card/80 px-3 py-2 text-sm font-medium shadow-sm outline-none transition-all hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-                  <span className="max-w-32 truncate sm:max-w-48">
-                    {accountLabel}
-                  </span>
-                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-open/account:rotate-180" />
-                </summary>
-                <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-40 rounded-2xl border border-border/80 bg-card p-2 shadow-[var(--shadow-soft)]">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start"
-                    disabled={authLoading}
-                    onClick={() => void handleSignOut()}
-                  >
-                    {authLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <LogOut className="h-4 w-4" />
-                    )}
-                    Sign out
-                  </Button>
-                </div>
-              </details>
-            ) : (
-              <Button asChild variant="outline" size="sm">
-                <Link href="/auth">
-                  <LogIn className="h-4 w-4" />
-                  Sign in
-                </Link>
-              </Button>
-            )}
+            <div className="shrink-0">
+              {isAuthenticated ? (
+                <details className="group/account relative">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-border/80 bg-card/80 px-3 py-2 text-sm font-medium shadow-sm outline-none transition-all hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                    <span className="max-w-32 truncate sm:max-w-48">
+                      {accountLabel}
+                    </span>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-open/account:rotate-180" />
+                  </summary>
+                  <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-40 rounded-2xl border border-border/80 bg-card p-2 shadow-[var(--shadow-soft)]">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start"
+                      disabled={authLoading}
+                      onClick={() => void handleSignOut()}
+                    >
+                      {authLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <LogOut className="h-4 w-4" />
+                      )}
+                      Sign out
+                    </Button>
+                  </div>
+                </details>
+              ) : (
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/auth">
+                    <LogIn className="h-4 w-4" />
+                    Sign in
+                  </Link>
+                </Button>
+              )}
+            </div>
           </div>
         </header>
 
@@ -1265,7 +1329,12 @@ export function RagWorkspace() {
                   </div>
                 </div>
 
-                <ScrollArea className="mt-3 min-h-0 flex-1 pr-3">
+                <ScrollArea
+                  className={cn(
+                    "mt-3 pr-3",
+                    isDocumentsExpanded && "h-48",
+                  )}
+                >
                   <div className="space-y-2">
                     {loadingDocuments ? (
                       <DocumentState
@@ -1279,7 +1348,7 @@ export function RagWorkspace() {
                         text="No documents indexed"
                       />
                     ) : (
-                      documents.map((document) => (
+                      visibleDocuments.map((document) => (
                         <Card
                           key={document.id}
                           className="p-3 shadow-none hover:-translate-y-0.5 hover:shadow-sm"
@@ -1334,6 +1403,25 @@ export function RagWorkspace() {
                     )}
                   </div>
                 </ScrollArea>
+                {hiddenDocumentCount > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 w-full justify-center text-muted-foreground"
+                    onClick={toggleDocumentsExpanded}
+                  >
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 transition-transform",
+                        isDocumentsExpanded && "rotate-180",
+                      )}
+                    />
+                    {isDocumentsExpanded
+                      ? "Show fewer documents"
+                      : `Show more documents (${hiddenDocumentCount})`}
+                  </Button>
+                ) : null}
 
                 <Separator className="my-5" />
 
@@ -1362,7 +1450,13 @@ export function RagWorkspace() {
                   </div>
 
                   {isAuthenticated ? (
-                    <ScrollArea className="max-h-48 pr-2">
+                    <>
+                    <ScrollArea
+                      className={cn(
+                        "pr-2",
+                        isChatsExpanded ? "h-64" : "max-h-48",
+                      )}
+                    >
                       <div className="space-y-2">
                         {loadingWorkspace ? (
                           <DocumentState
@@ -1373,7 +1467,7 @@ export function RagWorkspace() {
                         ) : visibleChats.length === 0 ? (
                           <DocumentState icon={MessageSquare} text="No chats yet" />
                         ) : (
-                          visibleChats.map((chat) => (
+                          visibleSidebarChats.map((chat) => (
                             <div
                               key={chat.id}
                               className={cn(
@@ -1416,6 +1510,26 @@ export function RagWorkspace() {
                         )}
                       </div>
                     </ScrollArea>
+                    {hiddenChatCount > 0 ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full justify-center text-muted-foreground"
+                        onClick={toggleChatsExpanded}
+                      >
+                        <ChevronDown
+                          className={cn(
+                            "h-4 w-4 transition-transform",
+                            isChatsExpanded && "rotate-180",
+                          )}
+                        />
+                        {isChatsExpanded
+                          ? "Show fewer chats"
+                          : `Show more chats (${hiddenChatCount})`}
+                      </Button>
+                    ) : null}
+                    </>
                   ) : (
                     <div className="rounded-2xl border border-border/80 bg-background/65 p-3 text-xs leading-5 text-muted-foreground shadow-sm">
                       Guest chats stay temporary. Sign in from the top-right
@@ -1441,7 +1555,7 @@ export function RagWorkspace() {
                     : readyDocuments.length > 0
                       ? "Select documents to ask from"
                       : isAuthenticated
-                        ? "No context in this chat yet"
+                        ? "No folder documents yet"
                         : "No context loaded yet"}
                 </p>
               </div>
@@ -1632,7 +1746,7 @@ export function RagWorkspace() {
                   </Button>
                   {draggingChatFile ? (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-3xl bg-background/85 text-sm font-medium text-foreground backdrop-blur-sm">
-                      Drop PDF to add it to this chat
+                      Drop PDF to add it to this folder
                     </div>
                   ) : null}
                 </section>

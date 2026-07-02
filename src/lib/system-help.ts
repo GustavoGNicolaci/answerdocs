@@ -21,8 +21,8 @@ export function getSystemHelpAnswer(question: string, language: ResponseLanguage
 
   if (asksAboutScope(normalized)) {
     return language === "pt"
-      ? "Este chat usa apenas documentos prontos selecionados e contexto colado na sessão atual desta aba. Documentos disponíveis, mas não selecionados, não são usados."
-      : "This chat uses only selected ready documents and pasted context from the current browser-tab session. Documents that are available but not selected are not used.";
+      ? "Este chat usa apenas documentos prontos selecionados da pasta atual e contexto colado na sessão atual desta aba. Documentos disponíveis, mas não selecionados, não são usados."
+      : "This chat uses only selected ready documents from the current folder and pasted context from the current browser-tab session. Documents that are available but not selected are not used.";
   }
 
   if (asksAboutPurpose(normalized)) {

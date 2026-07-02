@@ -8,7 +8,7 @@ import { getSessionIdFromRequest } from "@/lib/session";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { chunkPages } from "@/lib/text";
 import type { DocumentRecord } from "@/lib/types";
-import { requireOwnedChat } from "@/lib/workspace";
+import { requireOwnedChat, requireOwnedFolder } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -17,7 +17,8 @@ const documentSelect =
   "id,title,source_type,status,chunk_count,error_message,selected,created_at,updated_at";
 
 const selectionSchema = z.object({
-  chatId: z.uuid(),
+  folderId: z.uuid().optional(),
+  chatId: z.uuid().optional(),
   documentIds: z.array(z.uuid()).max(100),
   selected: z.boolean(),
 });
@@ -25,6 +26,7 @@ const selectionSchema = z.object({
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
+    const folderId = url.searchParams.get("folderId");
     const chatId = url.searchParams.get("chatId");
     const supabase = getSupabaseAdmin();
     let query = supabase
@@ -32,10 +34,14 @@ export async function GET(request: Request) {
       .select(documentSelect)
       .order("created_at", { ascending: false });
 
-    if (chatId) {
+    if (folderId) {
       const user = await requireAuthenticatedUser();
-      await requireOwnedChat(supabase, user.id, chatId);
-      query = query.eq("user_id", user.id).eq("chat_id", chatId);
+      await requireOwnedFolder(supabase, user.id, folderId);
+      query = query.eq("user_id", user.id).eq("folder_id", folderId);
+    } else if (chatId) {
+      const user = await requireAuthenticatedUser();
+      const chat = await requireOwnedChat(supabase, user.id, chatId);
+      query = query.eq("user_id", user.id).eq("folder_id", chat.folder_id);
     } else {
       const sessionId = getSessionIdFromRequest(request);
       query = query.eq("session_id", sessionId).is("user_id", null);
@@ -60,13 +66,18 @@ export async function POST(request: Request) {
     let userId: string | null = null;
     let folderId: string | null = null;
 
-    if (input.chatId) {
+    if (input.folderId) {
+      const user = await requireAuthenticatedUser();
+      const folder = await requireOwnedFolder(supabase, user.id, input.folderId);
+      userId = user.id;
+      folderId = folder.id;
+    } else if (input.chatId) {
       const user = await requireAuthenticatedUser();
       const chat = await requireOwnedChat(supabase, user.id, input.chatId);
       userId = user.id;
       folderId = chat.folder_id;
     } else if (!input.sessionId) {
-      throw badRequest("A valid sessionId or chatId is required.");
+      throw badRequest("A valid sessionId or folderId is required.");
     }
 
     const chunks = chunkPages(input.pages);
@@ -163,7 +174,18 @@ export async function PATCH(request: Request) {
     const body = selectionSchema.parse(await request.json());
     const user = await requireAuthenticatedUser();
     const supabase = getSupabaseAdmin();
-    await requireOwnedChat(supabase, user.id, body.chatId);
+    let folderId = body.folderId ?? null;
+
+    if (folderId) {
+      await requireOwnedFolder(supabase, user.id, folderId);
+    } else if (body.chatId) {
+      const chat = await requireOwnedChat(supabase, user.id, body.chatId);
+      folderId = chat.folder_id;
+    }
+
+    if (!folderId) {
+      throw badRequest("A valid folderId is required.");
+    }
 
     if (body.documentIds.length === 0) {
       return Response.json({ ok: true });
@@ -176,7 +198,7 @@ export async function PATCH(request: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", user.id)
-      .eq("chat_id", body.chatId)
+      .eq("folder_id", folderId)
       .in("id", body.documentIds);
 
     if (error) throw error;

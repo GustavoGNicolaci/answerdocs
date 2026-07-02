@@ -90,7 +90,12 @@ export async function POST(request: Request) {
             responseLanguage,
             messages,
             history,
-            scope: { kind: "user", userId: user.id, chatId: chat.id },
+            scope: {
+              kind: "user",
+              userId: user.id,
+              chatId: chat.id,
+              folderId: chat.folder_id,
+            },
           });
 
       await saveChatExchange(supabase, {
@@ -127,7 +132,7 @@ export async function POST(request: Request) {
 
 type AnswerScope =
   | { kind: "guest"; sessionId: string }
-  | { kind: "user"; userId: string; chatId: string };
+  | { kind: "user"; userId: string; chatId: string; folderId: string };
 
 type LocalizedMessages = {
   noContext: string;
@@ -229,7 +234,7 @@ async function answerFromSelectedDocuments({
     query_embedding: queryEmbedding,
     filter_session_id: scope.kind === "guest" ? scope.sessionId : null,
     filter_user_id: scope.kind === "user" ? scope.userId : null,
-    filter_chat_id: scope.kind === "user" ? scope.chatId : null,
+    filter_folder_id: scope.kind === "user" ? scope.folderId : null,
     match_threshold: MATCH_THRESHOLD,
     match_count: MATCH_COUNT,
     filter_document_ids: selectedDocumentIds,
@@ -288,7 +293,7 @@ async function hasReadyDocumentContext(
   if (scope.kind === "guest") {
     query = query.eq("session_id", scope.sessionId).is("user_id", null);
   } else {
-    query = query.eq("user_id", scope.userId).eq("chat_id", scope.chatId);
+    query = query.eq("user_id", scope.userId).eq("folder_id", scope.folderId);
   }
 
   if (documentIds && documentIds.length > 0) {

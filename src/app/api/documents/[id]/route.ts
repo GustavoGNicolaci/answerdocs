@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { requireAuthenticatedUser } from "@/lib/auth";
-import { toResponseError } from "@/lib/errors";
+import { badRequest, toResponseError } from "@/lib/errors";
 import { getSessionIdFromRequest } from "@/lib/session";
 import { getSupabaseAdmin } from "@/lib/supabase";
-import { requireOwnedChat } from "@/lib/workspace";
+import { requireOwnedChat, requireOwnedFolder } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
@@ -12,7 +12,8 @@ type DeleteContext = {
 };
 
 const updateDocumentSchema = z.object({
-  chatId: z.uuid(),
+  folderId: z.uuid().optional(),
+  chatId: z.uuid().optional(),
   selected: z.boolean(),
 });
 
@@ -22,7 +23,18 @@ export async function PATCH(request: Request, context: DeleteContext) {
     const body = updateDocumentSchema.parse(await request.json());
     const user = await requireAuthenticatedUser();
     const supabase = getSupabaseAdmin();
-    await requireOwnedChat(supabase, user.id, body.chatId);
+    let folderId = body.folderId ?? null;
+
+    if (folderId) {
+      await requireOwnedFolder(supabase, user.id, folderId);
+    } else if (body.chatId) {
+      const chat = await requireOwnedChat(supabase, user.id, body.chatId);
+      folderId = chat.folder_id;
+    }
+
+    if (!folderId) {
+      throw badRequest("A valid folderId is required.");
+    }
 
     const { error } = await supabase
       .from("documents")
@@ -32,7 +44,7 @@ export async function PATCH(request: Request, context: DeleteContext) {
       })
       .eq("id", id)
       .eq("user_id", user.id)
-      .eq("chat_id", body.chatId);
+      .eq("folder_id", folderId);
 
     if (error) throw error;
 
@@ -46,6 +58,7 @@ export async function DELETE(request: Request, context: DeleteContext) {
   try {
     const { id } = await context.params;
     const url = new URL(request.url);
+    const folderId = url.searchParams.get("folderId");
     const chatId = url.searchParams.get("chatId");
     const supabase = getSupabaseAdmin();
     let query = supabase
@@ -53,10 +66,14 @@ export async function DELETE(request: Request, context: DeleteContext) {
       .delete()
       .eq("id", id);
 
-    if (chatId) {
+    if (folderId) {
       const user = await requireAuthenticatedUser();
-      await requireOwnedChat(supabase, user.id, chatId);
-      query = query.eq("user_id", user.id).eq("chat_id", chatId);
+      await requireOwnedFolder(supabase, user.id, folderId);
+      query = query.eq("user_id", user.id).eq("folder_id", folderId);
+    } else if (chatId) {
+      const user = await requireAuthenticatedUser();
+      const chat = await requireOwnedChat(supabase, user.id, chatId);
+      query = query.eq("user_id", user.id).eq("folder_id", chat.folder_id);
     } else {
       const sessionId = getSessionIdFromRequest(request);
       query = query.eq("session_id", sessionId).is("user_id", null);

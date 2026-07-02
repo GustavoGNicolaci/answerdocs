@@ -12,6 +12,7 @@ import type { DocumentInput } from "@/lib/types";
 const jsonDocumentSchema = z.object({
   sessionId: sessionIdSchema.optional(),
   chatId: z.uuid().optional(),
+  folderId: z.uuid().optional(),
   title: z.string().trim().max(120).optional(),
   text: z.string().trim().min(1).max(MAX_TEXT_CHARACTERS),
 });
@@ -19,6 +20,7 @@ const jsonDocumentSchema = z.object({
 type InputScope = {
   sessionId: string | null;
   chatId: string | null;
+  folderId: string | null;
 };
 
 export async function parseDocumentInput(request: Request): Promise<DocumentInput> {
@@ -32,10 +34,14 @@ export async function parseDocumentInput(request: Request): Promise<DocumentInpu
   const formData = await request.formData();
   const sessionId = parseOptionalSessionId(stringValue(formData.get("sessionId")));
   const chatId = parseOptionalUuid(stringValue(formData.get("chatId")), "chatId");
+  const folderId = parseOptionalUuid(
+    stringValue(formData.get("folderId")),
+    "folderId",
+  );
   const title = stringValue(formData.get("title"));
   const pastedText = stringValue(formData.get("text"));
   const file = formData.get("file");
-  const scope = { sessionId, chatId };
+  const scope = { sessionId, chatId, folderId };
 
   if (file instanceof File && file.size > 0) {
     return parseFileInput(file, scope, title);
@@ -139,10 +145,15 @@ function parseOptionalUuid(value: string | undefined, fieldName: string) {
   return parsed.data;
 }
 
-function toInputScope(input: { sessionId?: string; chatId?: string }) {
+function toInputScope(input: {
+  sessionId?: string;
+  chatId?: string;
+  folderId?: string;
+}) {
   return {
     sessionId: input.sessionId ?? null,
     chatId: input.chatId ?? null,
+    folderId: input.folderId ?? null,
   };
 }
 

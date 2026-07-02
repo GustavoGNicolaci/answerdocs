@@ -5,6 +5,7 @@ import {
   NO_SELECTED_DOCUMENT_ANSWER,
   SELECTED_DOCUMENTS_FALLBACK_ANSWER,
 } from "@/lib/constants";
+import { requireAuthenticatedUser } from "@/lib/auth";
 import {
   embedText,
   generateConversationalAnswer,
@@ -12,7 +13,16 @@ import {
 } from "@/lib/gemini";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import type { MatchDocumentChunk } from "@/lib/types";
+import {
+  loadSavedChatTurns,
+  requireOwnedChat,
+  saveChatExchange,
+} from "@/lib/workspace";
 import { POST } from "./route";
+
+vi.mock("@/lib/auth", () => ({
+  requireAuthenticatedUser: vi.fn(),
+}));
 
 vi.mock("@/lib/gemini", () => ({
   embedText: vi.fn(),
@@ -24,8 +34,17 @@ vi.mock("@/lib/supabase", () => ({
   getSupabaseAdmin: vi.fn(),
 }));
 
+vi.mock("@/lib/workspace", () => ({
+  loadSavedChatTurns: vi.fn(),
+  requireOwnedChat: vi.fn(),
+  saveChatExchange: vi.fn(),
+}));
+
 const sessionId = "11111111-1111-4111-8111-111111111111";
 const documentId = "22222222-2222-4222-8222-222222222222";
+const userId = "66666666-6666-4666-8666-666666666666";
+const folderId = "77777777-7777-4777-8777-777777777777";
+const chatId = "88888888-8888-4888-8888-888888888888";
 
 const matches: MatchDocumentChunk[] = [
   {
@@ -69,6 +88,20 @@ const matches: MatchDocumentChunk[] = [
 describe("chat route", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.mocked(requireAuthenticatedUser).mockResolvedValue({
+      id: userId,
+      email: "user@example.com",
+    });
+    vi.mocked(requireOwnedChat).mockResolvedValue({
+      id: chatId,
+      user_id: userId,
+      folder_id: folderId,
+      title: "New chat",
+      created_at: "2026-07-02T00:00:00.000Z",
+      updated_at: "2026-07-02T00:00:00.000Z",
+    });
+    vi.mocked(loadSavedChatTurns).mockResolvedValue([]);
+    vi.mocked(saveChatExchange).mockResolvedValue(undefined);
   });
 
   it("requires a session id", async () => {
@@ -298,9 +331,121 @@ describe("chat route", () => {
       "match_document_chunks",
       expect.objectContaining({
         filter_session_id: sessionId,
+        filter_folder_id: null,
         filter_document_ids: [documentId],
       }),
     );
+  });
+
+  it("uses the active chat folder when searching authenticated documents", async () => {
+    const { countQueries, rpc } = mockSupabase({
+      readyDocumentCounts: [1, 1],
+      rpcData: matches,
+    });
+    vi.mocked(embedText).mockResolvedValue(new Array(768).fill(0));
+    vi.mocked(generateGroundedAnswer).mockResolvedValue(
+      "Policy.pdf says refunds are available within 30 days [1].",
+    );
+
+    const response = await POST(
+      jsonRequest({
+        chatId,
+        question: "What is the refund window?",
+        documentIds: [documentId],
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.citations).toHaveLength(1);
+    expect(requireOwnedChat).toHaveBeenCalledWith(
+      expect.anything(),
+      userId,
+      chatId,
+    );
+    expect(countQueries[0]?.eq).toHaveBeenCalledWith("folder_id", folderId);
+    expect(rpc).toHaveBeenCalledWith(
+      "match_document_chunks",
+      expect.objectContaining({
+        filter_session_id: null,
+        filter_user_id: userId,
+        filter_folder_id: folderId,
+        filter_document_ids: [documentId],
+      }),
+    );
+    expect(saveChatExchange).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId,
+        citations: expect.arrayContaining([
+          expect.objectContaining({ documentId }),
+        ]),
+      }),
+    );
+  });
+
+  it("does not search authenticated documents outside the active folder", async () => {
+    const { countQueries, rpc } = mockSupabase({
+      readyDocumentCounts: [0],
+    });
+
+    const response = await POST(
+      jsonRequest({
+        chatId,
+        question: "What is in the other folder?",
+        documentIds: [documentId],
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      answer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+      citations: [],
+    });
+    expect(countQueries[0]?.eq).toHaveBeenCalledWith("folder_id", folderId);
+    expect(countQueries[0]?.in).toHaveBeenCalledWith("id", [documentId]);
+    expect(embedText).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("uses only the saved history from the active authenticated chat without documents", async () => {
+    const { rpc } = mockSupabase({ readyDocumentCounts: [0] });
+    vi.mocked(loadSavedChatTurns).mockResolvedValue([
+      {
+        id: "99999999-9999-4999-8999-999999999999",
+        question: "What is the refund window?",
+        answer: "The refund window is 30 days.",
+        citations: [],
+        language: "en",
+      },
+    ]);
+    vi.mocked(generateConversationalAnswer).mockResolvedValue(
+      "It means the customer has 30 days to request a refund.",
+    );
+
+    const response = await POST(
+      jsonRequest({
+        chatId,
+        question: "Explain that in more detail.",
+        documentIds: [],
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      answer: "It means the customer has 30 days to request a refund.",
+      citations: [],
+    });
+    expect(loadSavedChatTurns).toHaveBeenCalledWith(
+      expect.anything(),
+      userId,
+      chatId,
+    );
+    expect(generateConversationalAnswer).toHaveBeenCalled();
+    expect(embedText).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("passes recent conversation history to retrieval and answer prompts", async () => {
