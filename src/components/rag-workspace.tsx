@@ -3,6 +3,7 @@
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
   Database,
   FileText,
   Loader2,
@@ -415,10 +416,10 @@ export function RagWorkspace() {
     return (
       <main className="min-h-dvh bg-background text-foreground lg:h-dvh">
         <div className="grid min-h-dvh w-full gap-0 lg:h-dvh lg:grid-cols-[380px_minmax(0,1fr)]">
-          <aside className="border-b border-border bg-card/40 lg:border-b-0 lg:border-r">
+          <aside className="border-b border-border/80 bg-card/80 lg:border-b-0 lg:border-r">
             <div className="flex h-full flex-col p-5">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
                   <Sparkles className="h-5 w-5" />
                 </div>
                 <div>
@@ -429,7 +430,7 @@ export function RagWorkspace() {
                 </div>
               </div>
               <Separator className="my-5" />
-              <div className="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+              <div className="animate-panel-in flex items-center gap-2 rounded-2xl border border-dashed border-border/90 bg-card/70 px-3 py-4 text-sm text-muted-foreground shadow-sm">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Preparing chat session
               </div>
@@ -437,7 +438,7 @@ export function RagWorkspace() {
           </aside>
           <section className="flex min-h-[60dvh] items-center justify-center p-5 lg:min-h-0">
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <Loader2 className="h-4 w-4 animate-spin text-accent-foreground" />
               Preparing workspace
             </div>
           </section>
@@ -450,16 +451,16 @@ export function RagWorkspace() {
     <main className="h-dvh overflow-hidden bg-background text-foreground">
       <div
         className={cn(
-          "grid h-dvh w-full grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden transition-[grid-template-columns] lg:grid-rows-none",
+          "grid h-dvh w-full grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden transition-[grid-template-columns] duration-300 ease-out lg:grid-rows-none",
           isSidebarCollapsed
             ? "lg:grid-cols-[72px_minmax(0,1fr)]"
             : "lg:grid-cols-[380px_minmax(0,1fr)]",
         )}
       >
-        <aside className="max-h-[32dvh] min-w-0 overflow-y-auto border-b border-border bg-card/40 lg:max-h-none lg:overflow-hidden lg:border-b-0 lg:border-r">
+        <aside className="max-h-[32dvh] min-w-0 overflow-y-auto border-b border-border/80 bg-card/80 shadow-[var(--shadow-subtle)] lg:max-h-none lg:overflow-hidden lg:border-b-0 lg:border-r lg:shadow-none">
           <div
             className={cn(
-              "flex h-full min-h-0 flex-col p-5",
+              "flex h-full min-h-0 flex-col p-5 transition-all duration-300 ease-out",
               isSidebarCollapsed && "p-3",
             )}
           >
@@ -469,7 +470,7 @@ export function RagWorkspace() {
                 isSidebarCollapsed && "lg:flex-col",
               )}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition-transform duration-200 hover:scale-105">
                 <Sparkles className="h-5 w-5" />
               </div>
               {!isSidebarCollapsed ? (
@@ -524,7 +525,7 @@ export function RagWorkspace() {
               <>
                 <Separator className="my-5" />
 
-                <form onSubmit={handleUpload} className="space-y-4">
+                <form onSubmit={handleUpload} className="animate-panel-in space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold">Documents</h2>
                     <Badge variant="secondary">
@@ -637,7 +638,10 @@ export function RagWorkspace() {
                       />
                     ) : (
                       documents.map((document) => (
-                        <Card key={document.id} className="p-3">
+                        <Card
+                          key={document.id}
+                          className="p-3 shadow-none hover:-translate-y-0.5 hover:shadow-sm"
+                        >
                           <div className="flex items-start gap-3">
                             <input
                               aria-label={`Select ${document.title}`}
@@ -647,7 +651,7 @@ export function RagWorkspace() {
                               )}
                               disabled={document.status !== "ready"}
                               onChange={() => toggleDocument(document.id)}
-                              className="mt-1 h-4 w-4 rounded border-border accent-[var(--primary)]"
+                              className="mt-1 h-4 w-4 rounded border-border accent-[var(--accent)] transition-transform duration-200 checked:scale-105"
                             />
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-medium">
@@ -694,7 +698,7 @@ export function RagWorkspace() {
         </aside>
 
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-          <header className="border-b border-border px-5 py-4">
+          <header className="border-b border-border/80 bg-background/70 px-5 py-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="text-xl font-semibold tracking-tight">
@@ -708,16 +712,16 @@ export function RagWorkspace() {
                       : "No context loaded yet"}
                 </p>
               </div>
-              <Badge variant="secondary">
+              <Badge variant="secondary" className="self-start md:self-auto">
                 Gemini - Supabase pgvector
               </Badge>
             </div>
           </header>
 
-          <div className="flex min-h-0 flex-1 flex-col p-5">
+          <div className="flex min-h-0 flex-1 flex-col p-4 sm:p-5">
             <div
               className={cn(
-                "mx-auto flex min-h-0 w-full max-w-[960px] flex-1 flex-col",
+                "mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col",
                 isInitialChat && "justify-center",
               )}
             >
@@ -731,75 +735,89 @@ export function RagWorkspace() {
               ) : null}
 
               {isInitialChat ? (
-                <div className="mb-5 flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-4 py-10 text-center">
-                  <MessageSquare className="mb-3 h-8 w-8 text-muted-foreground" />
+                <div className="animate-panel-in mb-5 flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/90 bg-card/70 px-4 py-10 text-center shadow-[var(--shadow-subtle)]">
+                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary text-accent-foreground shadow-sm">
+                    <MessageSquare className="h-6 w-6" />
+                  </div>
                   <p className="text-sm font-medium">No questions yet</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Indexed answers will appear here.
                   </p>
                 </div>
               ) : (
-                <ScrollArea className="min-h-0 flex-1 pr-3">
-                  <div className="space-y-4">
+                <ScrollArea className="min-h-0 flex-1 pr-2 sm:pr-3">
+                  <div className="flex min-h-full flex-col justify-end gap-4 pb-1">
                     {turns.map((turn) => (
                       <article
                         key={turn.id}
-                        className="rounded-lg border border-border bg-card/40 p-4"
+                        className="animate-message-in flex flex-col gap-3"
                       >
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary">
-                            <MessageSquare className="h-4 w-4 text-primary" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium">{turn.question}</p>
-                            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-foreground">
-                              {turn.answer}
+                        <div className="ml-auto flex max-w-[86%] items-start gap-2 sm:max-w-[76%]">
+                          <div className="min-w-0 rounded-3xl rounded-br-lg bg-primary px-4 py-3 text-primary-foreground shadow-sm">
+                            <p className="whitespace-pre-wrap text-sm leading-6">
+                              {turn.question}
                             </p>
                           </div>
                         </div>
 
-                        {turn.citations.length > 0 ? (
-                          <details className="mt-4 rounded-md border border-border bg-background/40">
-                            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
-                              <Quote className="h-4 w-4 text-accent" />
-                              View references ({turn.citations.length})
-                            </summary>
-                            <div className="grid gap-3 border-t border-border p-3 md:grid-cols-2">
-                              {turn.citations.map((citation) => (
-                                <div
-                                  key={citation.chunkId}
-                                  className="rounded-md border border-border bg-background/50 p-3"
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-2">
-                                        <Quote className="h-4 w-4 text-accent" />
-                                        <span className="text-sm font-medium">
-                                          [{citation.index}] {citation.documentTitle}
-                                        </span>
-                                      </div>
-                                      <p className="mt-1 text-xs text-muted-foreground">
-                                        {citation.pageNumber
-                                          ? `Page ${citation.pageNumber} - Block ${citation.chunkIndex + 1}`
-                                          : `Text block ${citation.chunkIndex + 1}`}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <p className="mt-3 max-h-28 overflow-hidden text-xs leading-5 text-muted-foreground">
-                                    {citation.snippet}
-                                  </p>
-                                </div>
-                              ))}
+                        <div className="mr-auto max-w-[94%] rounded-3xl rounded-bl-lg border border-border/80 bg-card/85 p-4 text-card-foreground shadow-[var(--shadow-subtle)] sm:max-w-[86%]">
+                          <div className="flex items-start gap-3">
+                            <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-secondary text-accent-foreground shadow-sm">
+                              <Sparkles className="h-4 w-4" />
                             </div>
-                          </details>
-                        ) : null}
+                            <div className="min-w-0 flex-1">
+                              <p className="whitespace-pre-wrap text-sm leading-6">
+                                {turn.answer}
+                              </p>
+                            </div>
+                          </div>
+
+                          {turn.citations.length > 0 ? (
+                            <details className="group mt-4 rounded-2xl border border-border/80 bg-background/55 shadow-sm transition-all duration-200 open:bg-background/75">
+                              <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+                                <Quote className="h-4 w-4 text-accent-foreground" />
+                                View references ({turn.citations.length})
+                                <ChevronDown className="ml-auto h-4 w-4 transition-transform duration-200 group-open:rotate-180" />
+                              </summary>
+                              <div className="references-panel grid gap-3 border-t border-border/80 p-3 md:grid-cols-2">
+                                {turn.citations.map((citation) => (
+                                  <div
+                                    key={citation.chunkId}
+                                    className="rounded-2xl border border-border/75 bg-card/70 p-3 shadow-sm"
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground">
+                                            {citation.index}
+                                          </span>
+                                          <span className="truncate text-sm font-medium">
+                                            {citation.documentTitle}
+                                          </span>
+                                        </div>
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                          {citation.pageNumber
+                                            ? `Page ${citation.pageNumber} - Block ${citation.chunkIndex + 1}`
+                                            : `Text block ${citation.chunkIndex + 1}`}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <p className="mt-3 max-h-28 overflow-hidden text-xs leading-5 text-muted-foreground">
+                                      {citation.snippet}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+                          ) : null}
+                        </div>
                       </article>
                     ))}
 
                     {asking ? (
-                      <div className="rounded-lg border border-border bg-card/50 p-4">
+                      <div className="animate-message-in mr-auto rounded-3xl rounded-bl-lg border border-border/80 bg-card/80 p-4 shadow-[var(--shadow-subtle)]">
                         <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          <Loader2 className="h-4 w-4 animate-spin text-accent-foreground" />
                           Retrieving context and drafting an answer
                         </div>
                       </div>
@@ -822,18 +840,19 @@ export function RagWorkspace() {
                   onDragLeave={handleChatDragLeave}
                   onDrop={handleChatDrop}
                   className={cn(
-                    "relative rounded-lg border border-border bg-card/35 transition-colors",
-                    draggingChatFile && "border-primary bg-primary/10",
+                    "relative rounded-3xl border border-border/80 bg-card/85 shadow-[var(--shadow-soft)] transition-all duration-200 focus-within:border-ring/80 focus-within:ring-4 focus-within:ring-ring/10",
+                    draggingChatFile &&
+                      "border-primary bg-secondary shadow-[var(--shadow-soft)]",
                   )}
                 >
-                  <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Search className="pointer-events-none absolute left-4 top-4 h-4 w-4 text-muted-foreground" />
                   <Textarea
                     value={question}
                     onChange={(event) => setQuestion(event.target.value)}
                     onKeyDown={handleQuestionKeyDown}
                     onPaste={handleQuestionPaste}
                     placeholder="Ask about your documents or paste a PDF/text context"
-                    className="min-h-32 border-0 bg-transparent pb-16 pl-10 pr-28 focus-visible:ring-0"
+                    className="min-h-32 border-0 bg-transparent pb-16 pl-11 pr-28 shadow-none focus-visible:ring-0"
                     disabled={asking || uploadingChatAttachment || !sessionId}
                   />
                   <div className="absolute bottom-3 left-3 flex items-center gap-2">
@@ -841,6 +860,7 @@ export function RagWorkspace() {
                       type="button"
                       variant="secondary"
                       size="sm"
+                      className="shadow-none"
                       title="Attach PDF"
                       disabled={uploadingChatAttachment || !sessionId}
                       onClick={() => chatFileInputRef.current?.click()}
@@ -871,7 +891,7 @@ export function RagWorkspace() {
                     Ask
                   </Button>
                   {draggingChatFile ? (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/80 text-sm font-medium text-primary">
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-3xl bg-background/85 text-sm font-medium text-foreground backdrop-blur-sm">
                       Drop PDF to add it to this chat
                     </div>
                   ) : null}
@@ -918,11 +938,11 @@ function InlineMessage({
   const Icon = tone === "success" ? CheckCircle2 : AlertCircle;
 
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm">
+    <div className="animate-panel-in flex items-center gap-2 rounded-2xl border border-border/80 bg-card/85 px-3 py-2 text-sm shadow-sm">
       <Icon
         className={
           tone === "success"
-            ? "h-4 w-4 text-primary"
+            ? "h-4 w-4 text-accent-foreground"
             : "h-4 w-4 text-destructive"
         }
       />
@@ -943,7 +963,7 @@ function DocumentState({
   spin?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+    <div className="animate-panel-in flex items-center gap-2 rounded-2xl border border-dashed border-border/90 bg-card/65 px-3 py-4 text-sm text-muted-foreground shadow-sm">
       <Icon className={spin ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
       {text}
     </div>

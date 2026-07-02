@@ -16,7 +16,7 @@ export function ScrollArea({
         orientation="vertical"
         className="flex touch-none select-none p-0.5"
       >
-        <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-full bg-border" />
+        <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-full bg-border/90 transition-colors hover:bg-primary/80" />
       </ScrollAreaPrimitive.Scrollbar>
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
