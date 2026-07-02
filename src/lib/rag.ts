@@ -91,6 +91,33 @@ export function buildRetrievalQuery(
   ].join("\n");
 }
 
+export function buildHistoryAnswerPrompt(
+  question: string,
+  history: ConversationHistoryItem[],
+  options: {
+    fallbackAnswer: string;
+    responseLanguage: ResponseLanguage;
+  },
+) {
+  const languageName = getResponseLanguageName(options.responseLanguage);
+
+  return [
+    "Answer the user's current question using only the conversation history below.",
+    "Requirements:",
+    `- Write a concise answer in ${languageName}. Do not switch languages unless the user explicitly asks.`,
+    "- Use the history only for conversational continuity and clarification.",
+    "- Do not introduce new document facts, file details, legal claims, prices, dates, or external knowledge that are not already present in the history.",
+    "- Do not invent citations or references.",
+    "- If the question requires unavailable document information, reply exactly:",
+    options.fallbackAnswer,
+    "",
+    "Conversation history:",
+    formatConversationHistory(history),
+    "",
+    `Question: ${question}`,
+  ].join("\n");
+}
+
 export function createCitations(
   matches: MatchDocumentChunk[],
   answer?: string,

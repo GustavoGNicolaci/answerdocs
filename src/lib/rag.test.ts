@@ -6,6 +6,7 @@ import {
 } from "@/lib/constants";
 import {
   buildAnswerPrompt,
+  buildHistoryAnswerPrompt,
   buildRetrievalQuery,
   createCitations,
   hasInvalidCitationIndexes,
@@ -113,6 +114,28 @@ describe("rag utilities", () => {
     expect(query).toContain("Recent conversation:");
     expect(query).toContain("Turn 1 user: What is the refund window?");
     expect(query).toContain("Current question: Explain that in more detail.");
+  });
+
+  it("builds a history-only prompt without document citations", () => {
+    const prompt = buildHistoryAnswerPrompt(
+      "Explain that in more detail.",
+      [
+        {
+          question: "What is the refund window?",
+          answer: "The refund window is 30 days.",
+        },
+      ],
+      {
+        fallbackAnswer: LOCALIZED_CHAT_MESSAGES.en.noContext,
+        responseLanguage: "en",
+      },
+    );
+
+    expect(prompt).toContain("using only the conversation history");
+    expect(prompt).toContain("Do not invent citations or references.");
+    expect(prompt).toContain("The refund window is 30 days.");
+    expect(prompt).toContain(LOCALIZED_CHAT_MESSAGES.en.noContext);
+    expect(prompt).not.toContain("Selected document context:");
   });
 
   it("maps only cited chunks to public citations", () => {

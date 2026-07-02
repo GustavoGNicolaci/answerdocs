@@ -8,16 +8,23 @@ import {
   Copy,
   Database,
   FileText,
+  Folder,
+  FolderPlus,
+  LogIn,
+  LogOut,
   Loader2,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
+  Pencil,
+  Plus,
   Quote,
   Search,
   Send,
   Sparkles,
   Trash2,
   Upload,
+  type LucideIcon,
 } from "lucide-react";
 import {
   ClipboardEvent,
@@ -59,6 +66,7 @@ type DocumentItem = {
   status: "indexing" | "ready" | "failed";
   chunk_count: number;
   error_message: string | null;
+  selected: boolean;
   created_at: string;
 };
 
@@ -81,6 +89,33 @@ type ChatTurn = {
 };
 
 type UploadMode = "file" | "text";
+type AuthMode = "login" | "signup";
+
+type AuthUser = {
+  id: string;
+  email: string | null;
+};
+
+type ProfileItem = {
+  id: string;
+  full_name: string;
+  email: string | null;
+};
+
+type FolderItem = {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type SavedChatItem = {
+  id: string;
+  folder_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
 
 export function RagWorkspace() {
   const chatFormRef = useRef<HTMLFormElement>(null);
@@ -88,6 +123,21 @@ export function RagWorkspace() {
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [profile, setProfile] = useState<ProfileItem | null>(null);
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [authName, setAuthName] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [folders, setFolders] = useState<FolderItem[]>([]);
+  const [chats, setChats] = useState<SavedChatItem[]>([]);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [loadingWorkspace, setLoadingWorkspace] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
@@ -111,27 +161,134 @@ export function RagWorkspace() {
     () => documents.filter((document) => document.status === "ready"),
     [documents],
   );
+  const authUserId = authUser?.id ?? null;
+  const isAuthenticated = Boolean(authUserId);
+  const activeFolder = useMemo(
+    () => folders.find((folder) => folder.id === activeFolderId) ?? null,
+    [activeFolderId, folders],
+  );
+  const activeChat = useMemo(
+    () => chats.find((chat) => chat.id === activeChatId) ?? null,
+    [activeChatId, chats],
+  );
+  const visibleChats = useMemo(
+    () =>
+      activeFolderId
+        ? chats.filter((chat) => chat.folder_id === activeFolderId)
+        : chats,
+    [activeFolderId, chats],
+  );
   const isInitialChat = turns.length === 0 && !asking;
   const canSubmitQuestion =
-    Boolean(sessionId) &&
+    (isAuthenticated ? Boolean(activeChatId) : Boolean(sessionId)) &&
     !asking &&
     !uploadingChatAttachment &&
     question.trim().length > 0;
+  const documentControlsDisabled =
+    uploading || !sessionId || (isAuthenticated && !activeChatId);
 
-  async function loadDocuments(currentSessionId: string) {
+  async function loadAuthSession() {
     try {
-      const response = await fetch(
-        `/api/documents?sessionId=${encodeURIComponent(currentSessionId)}`,
-        { cache: "no-store" },
-      );
+      const response = await fetch("/api/auth/session", { cache: "no-store" });
+      if (!response.ok) {
+        setAuthUser(null);
+        setProfile(null);
+        return;
+      }
+
+      const payload = await readPayload<{
+        user: AuthUser | null;
+        profile: ProfileItem | null;
+      }>(response);
+      setAuthUser(payload.user);
+      setProfile(payload.profile);
+    } catch {
+      setAuthUser(null);
+      setProfile(null);
+    } finally {
+      setAuthChecked(true);
+    }
+  }
+
+  async function loadWorkspace(preferredChatId?: string) {
+    setLoadingWorkspace(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/workspace", { cache: "no-store" });
+      const payload = await readPayload<{
+        user: AuthUser;
+        profile: ProfileItem;
+        folders: FolderItem[];
+        chats: SavedChatItem[];
+      }>(response);
+
+      setAuthUser(payload.user);
+      setProfile(payload.profile);
+      setFolders(payload.folders);
+      setChats(payload.chats);
+
+      const nextChat =
+        payload.chats.find((chat) => chat.id === preferredChatId) ??
+        payload.chats[0] ??
+        null;
+      const nextFolder =
+        payload.folders.find((folder) => folder.id === nextChat?.folder_id) ??
+        payload.folders[0] ??
+        null;
+
+      setActiveFolderId(nextFolder?.id ?? null);
+      setActiveChatId(nextChat?.id ?? null);
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    } finally {
+      setLoadingWorkspace(false);
+    }
+  }
+
+  async function loadSavedMessages(chatId: string) {
+    try {
+      const response = await fetch(`/api/chats/${chatId}/messages`, {
+        cache: "no-store",
+      });
+      const payload = await readPayload<{ turns: ChatTurn[] }>(response);
+      setTurns(payload.turns);
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    }
+  }
+
+  async function loadDocuments(scope: { sessionId?: string; chatId?: string }) {
+    try {
+      const query = scope.chatId
+        ? `chatId=${encodeURIComponent(scope.chatId)}`
+        : `sessionId=${encodeURIComponent(scope.sessionId ?? "")}`;
+      const response = await fetch(`/api/documents?${query}`, {
+        cache: "no-store",
+      });
       const payload = await readPayload<{ documents: DocumentItem[] }>(response);
       setDocuments(payload.documents);
+      setSelectedDocumentIds(
+        scope.chatId
+          ? payload.documents
+              .filter((document) => document.status === "ready" && document.selected)
+              .map((document) => document.id)
+          : [],
+      );
     } catch (requestError) {
       setError(getClientError(requestError));
     } finally {
       setLoadingDocuments(false);
     }
   }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadAuthSession();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -156,15 +313,68 @@ export function RagWorkspace() {
   }, []);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionReady || !authChecked) return;
 
     const timer = window.setTimeout(() => {
-      setSelectedDocumentIds([]);
-      void loadDocuments(sessionId);
+      if (authUserId) {
+        setTurns([]);
+        setDocuments([]);
+        setSelectedDocumentIds([]);
+        setLoadingDocuments(false);
+        void loadWorkspace();
+        return;
+      }
+
+      if (sessionId) {
+        setTurns([]);
+        setDocuments([]);
+        setSelectedDocumentIds([]);
+        setLoadingDocuments(true);
+        void loadDocuments({ sessionId });
+      }
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [sessionId]);
+  }, [authChecked, authUserId, sessionId, sessionReady]);
+
+  useEffect(() => {
+    if (!authUserId || !activeChatId) return;
+
+    const timer = window.setTimeout(() => {
+      setTurns([]);
+      setDocuments([]);
+      setSelectedDocumentIds([]);
+      setLoadingDocuments(true);
+      void loadDocuments({ chatId: activeChatId });
+      void loadSavedMessages(activeChatId);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [activeChatId, authUserId]);
+
+  useEffect(() => {
+    if (!authUserId || !activeFolderId) return;
+
+    const activeChatBelongsToFolder = chats.some(
+      (chat) => chat.id === activeChatId && chat.folder_id === activeFolderId,
+    );
+
+    if (activeChatBelongsToFolder) return;
+
+    const timer = window.setTimeout(() => {
+      const nextChat = chats.find((chat) => chat.folder_id === activeFolderId);
+      setActiveChatId(nextChat?.id ?? null);
+
+      if (!nextChat) {
+        setTurns([]);
+        setDocuments([]);
+        setSelectedDocumentIds([]);
+        setLoadingDocuments(false);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [activeChatId, activeFolderId, authUserId, chats]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end" });
@@ -186,9 +396,16 @@ export function RagWorkspace() {
     if (!sessionId) {
       throw new Error("The chat session is not ready yet.");
     }
+    if (isAuthenticated && !activeChatId) {
+      throw new Error("Open a saved chat before adding documents.");
+    }
 
     const formData = new FormData();
-    formData.append("sessionId", sessionId);
+    if (isAuthenticated && activeChatId) {
+      formData.append("chatId", activeChatId);
+    } else {
+      formData.append("sessionId", sessionId);
+    }
     if (input.title?.trim()) formData.append("title", input.title.trim());
     if (input.file) formData.append("file", input.file);
     if (input.text?.trim()) formData.append("text", input.text.trim());
@@ -243,8 +460,15 @@ export function RagWorkspace() {
 
     try {
       if (!sessionId) throw new Error("The chat session is not ready yet.");
+      if (isAuthenticated && !activeChatId) {
+        throw new Error("Open a saved chat before deleting documents.");
+      }
+
+      const query = isAuthenticated
+        ? `chatId=${encodeURIComponent(activeChatId ?? "")}`
+        : `sessionId=${encodeURIComponent(sessionId)}`;
       const response = await fetch(
-        `/api/documents/${documentId}?sessionId=${encodeURIComponent(sessionId)}`,
+        `/api/documents/${documentId}?${query}`,
         { method: "DELETE" },
       );
       await readPayload(response);
@@ -266,6 +490,10 @@ export function RagWorkspace() {
     event.preventDefault();
     const nextQuestion = question.trim();
     if (!nextQuestion || asking || uploadingChatAttachment || !sessionId) return;
+    if (isAuthenticated && !activeChatId) {
+      setError("Create or open a chat before asking.");
+      return;
+    }
 
     const responseLanguage = detectResponseLanguage(nextQuestion);
     setAsking(true);
@@ -277,7 +505,7 @@ export function RagWorkspace() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sessionId,
+          ...(isAuthenticated ? { chatId: activeChatId } : { sessionId }),
           question: nextQuestion,
           documentIds: selectedDocumentIds,
           history: turns.slice(-CHAT_HISTORY_TURN_LIMIT).map((turn) => ({
@@ -302,6 +530,23 @@ export function RagWorkspace() {
         },
       ]);
       setQuestion("");
+
+      if (isAuthenticated && activeChatId) {
+        setChats((current) =>
+          current.map((chat) =>
+            chat.id === activeChatId
+              ? {
+                  ...chat,
+                  title:
+                    chat.title === "New chat"
+                      ? createLocalChatTitle(nextQuestion)
+                      : chat.title,
+                  updated_at: new Date().toISOString(),
+                }
+              : chat,
+          ),
+        );
+      }
     } catch (requestError) {
       setError(getClientError(requestError));
     } finally {
@@ -326,6 +571,194 @@ export function RagWorkspace() {
     } catch {
       setError("Could not copy message.");
     }
+  }
+
+  async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthLoading(true);
+    setAuthMessage(null);
+    setError(null);
+
+    try {
+      const endpoint = authMode === "login" ? "/api/auth/login" : "/api/auth/signup";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          authMode === "login"
+            ? { email: authEmail, password: authPassword }
+            : {
+                name: authName,
+                email: authEmail,
+                password: authPassword,
+                confirmPassword: authConfirmPassword,
+              },
+        ),
+      });
+      const payload = await readPayload<{
+        message?: string;
+        needsConfirmation?: boolean;
+      }>(response);
+      setAuthMessage(payload.message ?? "Signed in.");
+      setAuthPassword("");
+      setAuthConfirmPassword("");
+
+      if (payload.needsConfirmation) {
+        return;
+      }
+
+      setTurns([]);
+      setDocuments([]);
+      setSelectedDocumentIds([]);
+      await loadAuthSession();
+      await loadWorkspace();
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleSignOut() {
+    setAuthLoading(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      await readPayload(response);
+      setAuthUser(null);
+      setProfile(null);
+      setFolders([]);
+      setChats([]);
+      setActiveFolderId(null);
+      setActiveChatId(null);
+      setTurns([]);
+      setDocuments([]);
+      setSelectedDocumentIds([]);
+      if (sessionId) {
+        setLoadingDocuments(true);
+        await loadDocuments({ sessionId });
+      }
+      setNotice("Signed out. You are using guest mode.");
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleCreateFolder() {
+    const name = window.prompt("Folder name", "New folder");
+    if (!name?.trim()) return;
+
+    try {
+      const response = await fetch("/api/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const payload = await readPayload<{ folder: FolderItem }>(response);
+      await loadWorkspace();
+      setActiveFolderId(payload.folder.id);
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    }
+  }
+
+  async function handleRenameFolder(folder: FolderItem) {
+    const name = window.prompt("Rename folder", folder.name);
+    if (!name?.trim() || name.trim() === folder.name) return;
+
+    try {
+      const response = await fetch(`/api/folders/${folder.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      await readPayload(response);
+      await loadWorkspace(activeChatId ?? undefined);
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    }
+  }
+
+  async function handleDeleteFolder(folder: FolderItem) {
+    if (
+      !window.confirm(
+        `Delete "${folder.name}" and all chats and documents inside it?`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/folders/${folder.id}`, {
+        method: "DELETE",
+      });
+      await readPayload(response);
+      await loadWorkspace();
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    }
+  }
+
+  async function handleCreateChat() {
+    if (!activeFolderId) return;
+
+    try {
+      const response = await fetch("/api/chats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId: activeFolderId, title: "New chat" }),
+      });
+      const payload = await readPayload<{ chat: SavedChatItem }>(response);
+      await loadWorkspace(payload.chat.id);
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    }
+  }
+
+  async function handleRenameChat(chat: SavedChatItem) {
+    const title = window.prompt("Rename chat", chat.title);
+    if (!title?.trim() || title.trim() === chat.title) return;
+
+    try {
+      const response = await fetch(`/api/chats/${chat.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      await readPayload(response);
+      await loadWorkspace(chat.id);
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    }
+  }
+
+  async function handleDeleteChat(chat: SavedChatItem) {
+    if (
+      !window.confirm(
+        `Delete "${chat.title}" and its messages and documents?`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/chats/${chat.id}`, {
+        method: "DELETE",
+      });
+      await readPayload(response);
+      await loadWorkspace();
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    }
+  }
+
+  function handleOpenChat(chat: SavedChatItem) {
+    setActiveFolderId(chat.folder_id);
+    setActiveChatId(chat.id);
   }
 
   async function handleChatPdfFile(nextFile: File) {
@@ -444,15 +877,74 @@ export function RagWorkspace() {
     void handleChatPdfFile(nextFile);
   }
 
+  async function persistDocumentSelection(documentId: string, selected: boolean) {
+    if (!isAuthenticated || !activeChatId) return;
+
+    const response = await fetch(`/api/documents/${documentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId: activeChatId, selected }),
+    });
+    await readPayload(response);
+  }
+
+  async function persistBulkDocumentSelection(
+    documentIds: string[],
+    selected: boolean,
+  ) {
+    if (!isAuthenticated || !activeChatId || documentIds.length === 0) return;
+
+    const response = await fetch("/api/documents", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId: activeChatId, documentIds, selected }),
+    });
+    await readPayload(response);
+  }
+
   function toggleDocument(documentId: string) {
+    const selected = !selectedDocumentIds.includes(documentId);
     setSelectedDocumentIds((current) =>
       current.includes(documentId)
         ? current.filter((id) => id !== documentId)
         : [...current, documentId],
     );
+    setDocuments((current) =>
+      current.map((document) =>
+        document.id === documentId ? { ...document, selected } : document,
+      ),
+    );
+
+    void persistDocumentSelection(documentId, selected).catch((requestError) => {
+      setError(getClientError(requestError));
+    });
   }
 
-  if (!sessionReady) {
+  function selectAllReadyDocuments() {
+    const nextIds = readyDocuments.map((document) => document.id);
+    setSelectedDocumentIds(nextIds);
+    setDocuments((current) =>
+      current.map((document) =>
+        document.status === "ready" ? { ...document, selected: true } : document,
+      ),
+    );
+    void persistBulkDocumentSelection(nextIds, true).catch((requestError) => {
+      setError(getClientError(requestError));
+    });
+  }
+
+  function clearDocumentSelection() {
+    const currentIds = selectedDocumentIds;
+    setSelectedDocumentIds([]);
+    setDocuments((current) =>
+      current.map((document) => ({ ...document, selected: false })),
+    );
+    void persistBulkDocumentSelection(currentIds, false).catch((requestError) => {
+      setError(getClientError(requestError));
+    });
+  }
+
+  if (!sessionReady || !authChecked) {
     return (
       <main className="min-h-dvh bg-background text-foreground lg:h-dvh">
         <div className="grid min-h-dvh w-full gap-0 lg:h-dvh lg:grid-cols-[380px_minmax(0,1fr)]">
@@ -565,6 +1057,262 @@ export function RagWorkspace() {
               <>
                 <Separator className="my-5" />
 
+                <section className="animate-panel-in space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold">Account</h2>
+                    <Badge variant={isAuthenticated ? "secondary" : "outline"}>
+                      {isAuthenticated ? "Saved" : "Guest"}
+                    </Badge>
+                  </div>
+
+                  {isAuthenticated ? (
+                    <div className="rounded-2xl border border-border/80 bg-background/65 p-3 shadow-sm">
+                      <p className="truncate text-sm font-medium">
+                        {profile?.full_name || authUser?.email || "Signed in"}
+                      </p>
+                      {authUser?.email ? (
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {authUser.email}
+                        </p>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="mt-3 w-full justify-start"
+                        disabled={authLoading}
+                        onClick={() => void handleSignOut()}
+                      >
+                        {authLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <LogOut className="h-4 w-4" />
+                        )}
+                        Sign out
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-border/80 bg-background/65 p-3 shadow-sm">
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        Guest chats are temporary. Sign in to save folders,
+                        chats, documents, and history.
+                      </p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant={authMode === "login" ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setAuthMode("login")}
+                        >
+                          <LogIn className="h-4 w-4" />
+                          Login
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={authMode === "signup" ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setAuthMode("signup")}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Sign up
+                        </Button>
+                      </div>
+                      <form onSubmit={handleAuthSubmit} className="mt-3 space-y-2">
+                        {authMode === "signup" ? (
+                          <Input
+                            value={authName}
+                            onChange={(event) => setAuthName(event.target.value)}
+                            placeholder="Name"
+                            disabled={authLoading}
+                          />
+                        ) : null}
+                        <Input
+                          value={authEmail}
+                          onChange={(event) => setAuthEmail(event.target.value)}
+                          placeholder="Email"
+                          type="email"
+                          disabled={authLoading}
+                        />
+                        <Input
+                          value={authPassword}
+                          onChange={(event) => setAuthPassword(event.target.value)}
+                          placeholder="Password"
+                          type="password"
+                          disabled={authLoading}
+                        />
+                        {authMode === "signup" ? (
+                          <Input
+                            value={authConfirmPassword}
+                            onChange={(event) =>
+                              setAuthConfirmPassword(event.target.value)
+                            }
+                            placeholder="Confirm password"
+                            type="password"
+                            disabled={authLoading}
+                          />
+                        ) : null}
+                        <Button
+                          type="submit"
+                          className="w-full"
+                          disabled={authLoading}
+                        >
+                          {authLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : authMode === "login" ? (
+                            <LogIn className="h-4 w-4" />
+                          ) : (
+                            <Plus className="h-4 w-4" />
+                          )}
+                          {authMode === "login" ? "Login" : "Create account"}
+                        </Button>
+                      </form>
+                      {authMessage ? (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {authMessage}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </section>
+
+                {isAuthenticated ? (
+                  <>
+                    <Separator className="my-5" />
+                    <section className="animate-panel-in space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <h2 className="text-sm font-semibold">Folders</h2>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void handleCreateFolder()}
+                        >
+                          <FolderPlus className="h-4 w-4" />
+                          New
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        {loadingWorkspace ? (
+                          <DocumentState
+                            icon={Loader2}
+                            text="Loading workspace"
+                            spin
+                          />
+                        ) : (
+                          folders.map((folder) => (
+                            <div
+                              key={folder.id}
+                              className={cn(
+                                "rounded-2xl border border-border/75 bg-background/60 p-2 shadow-sm transition-colors",
+                                folder.id === activeFolderId && "bg-secondary",
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="min-w-0 flex-1 justify-start px-2"
+                                  onClick={() => setActiveFolderId(folder.id)}
+                                >
+                                  <Folder className="h-4 w-4 shrink-0" />
+                                  <span className="truncate">{folder.name}</span>
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  title={`Rename ${folder.name}`}
+                                  onClick={() => void handleRenameFolder(folder)}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  title={`Delete ${folder.name}`}
+                                  onClick={() => void handleDeleteFolder(folder)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-2">
+                        <div>
+                          <h2 className="text-sm font-semibold">Chats</h2>
+                          <p className="text-xs text-muted-foreground">
+                            {activeFolder?.name ?? "No folder selected"}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={!activeFolderId}
+                          onClick={() => void handleCreateChat()}
+                        >
+                          <Plus className="h-4 w-4" />
+                          New
+                        </Button>
+                      </div>
+
+                      <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
+                        {visibleChats.length === 0 ? (
+                          <DocumentState icon={MessageSquare} text="No chats yet" />
+                        ) : (
+                          visibleChats.map((chat) => (
+                            <div
+                              key={chat.id}
+                              className={cn(
+                                "rounded-2xl border border-border/75 bg-background/60 p-2 shadow-sm transition-colors",
+                                chat.id === activeChatId && "bg-secondary",
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="min-w-0 flex-1 justify-start px-2"
+                                  onClick={() => handleOpenChat(chat)}
+                                >
+                                  <MessageSquare className="h-4 w-4 shrink-0" />
+                                  <span className="truncate">{chat.title}</span>
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  title={`Rename ${chat.title}`}
+                                  onClick={() => void handleRenameChat(chat)}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  title={`Delete ${chat.title}`}
+                                  onClick={() => void handleDeleteChat(chat)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </section>
+                  </>
+                ) : null}
+
+                <Separator className="my-5" />
+
                 <form onSubmit={handleUpload} className="animate-panel-in space-y-4">
                   <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold">Documents</h2>
@@ -595,7 +1343,7 @@ export function RagWorkspace() {
                         value={title}
                         onChange={(event) => setTitle(event.target.value)}
                         placeholder="Quarterly report"
-                        disabled={uploading || !sessionId}
+                        disabled={documentControlsDisabled}
                       />
                     </div>
 
@@ -606,7 +1354,7 @@ export function RagWorkspace() {
                           htmlFor="document-file"
                           className={cn(
                             "flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-border bg-background/70 px-4 py-3 text-sm shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary hover:bg-secondary/75 hover:shadow-[var(--shadow-subtle)]",
-                            (uploading || !sessionId) &&
+                            documentControlsDisabled &&
                               "pointer-events-none cursor-not-allowed opacity-60",
                           )}
                         >
@@ -628,7 +1376,7 @@ export function RagWorkspace() {
                           id="document-file"
                           type="file"
                           accept="application/pdf,text/plain,.pdf,.txt"
-                          disabled={uploading || !sessionId}
+                          disabled={documentControlsDisabled}
                           className="sr-only"
                           onChange={(event) =>
                             setFile(event.target.files?.[0] ?? null)
@@ -645,7 +1393,7 @@ export function RagWorkspace() {
                           value={pastedText}
                           onChange={(event) => setPastedText(event.target.value)}
                           placeholder="Paste document text here"
-                          disabled={uploading || !sessionId}
+                          disabled={documentControlsDisabled}
                         />
                       </div>
                     </TabsContent>
@@ -656,7 +1404,7 @@ export function RagWorkspace() {
                   <Button
                     type="submit"
                     className="w-full"
-                    disabled={uploading || !sessionId}
+                    disabled={documentControlsDisabled}
                   >
                     {uploading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -677,11 +1425,7 @@ export function RagWorkspace() {
                       variant="ghost"
                       size="sm"
                       disabled={readyDocuments.length === 0}
-                      onClick={() =>
-                        setSelectedDocumentIds(
-                          readyDocuments.map((document) => document.id),
-                        )
-                      }
+                      onClick={selectAllReadyDocuments}
                     >
                       Select all
                     </Button>
@@ -690,7 +1434,7 @@ export function RagWorkspace() {
                       variant="ghost"
                       size="sm"
                       disabled={selectedDocumentIds.length === 0}
-                      onClick={() => setSelectedDocumentIds([])}
+                      onClick={clearDocumentSelection}
                     >
                       Clear
                     </Button>
@@ -776,18 +1520,20 @@ export function RagWorkspace() {
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="text-xl font-semibold tracking-tight">
-                  Ask your documents
+                  {activeChat?.title ?? "Ask your documents"}
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   {selectedDocumentIds.length > 0
                     ? `${selectedDocumentIds.length} selected`
                     : readyDocuments.length > 0
                       ? "Select documents to ask from"
-                      : "No context loaded yet"}
+                      : isAuthenticated
+                        ? "No context in this chat yet"
+                        : "No context loaded yet"}
                 </p>
               </div>
               <Badge variant="secondary" className="self-start md:self-auto">
-                Gemini - Supabase pgvector
+                {isAuthenticated ? "Saved workspace" : "Guest workspace"}
               </Badge>
             </div>
           </header>
@@ -947,7 +1693,11 @@ export function RagWorkspace() {
                     onPaste={handleQuestionPaste}
                     placeholder="Ask about your documents or paste a PDF/text context"
                     className="min-h-32 border-0 bg-transparent pb-14 pl-11 pr-28 shadow-none focus-visible:ring-0"
-                    disabled={asking || uploadingChatAttachment || !sessionId}
+                    disabled={
+                      asking ||
+                      uploadingChatAttachment ||
+                      (isAuthenticated ? !activeChatId : !sessionId)
+                    }
                   />
                   {uploadingChatAttachment ? (
                     <div className="absolute bottom-4 left-4 flex items-center gap-2 text-xs text-muted-foreground">
@@ -1024,7 +1774,7 @@ function DocumentState({
   text,
   spin = false,
 }: {
-  icon: typeof FileText;
+  icon: LucideIcon;
   text: string;
   spin?: boolean;
 }) {
@@ -1082,6 +1832,11 @@ async function readPayload<T = unknown>(response: Response): Promise<T> {
 
 function getClientError(error: unknown) {
   return error instanceof Error ? error.message : "Request failed.";
+}
+
+function createLocalChatTitle(question: string) {
+  const title = question.replace(/\s+/g, " ").trim();
+  return title.slice(0, 70) || "New chat";
 }
 
 function isPdfFile(file: File) {

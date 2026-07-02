@@ -1,6 +1,6 @@
-import {
-  MAX_CHUNKS_PER_DOCUMENT,
-} from "@/lib/constants";
+import { z } from "zod";
+import { MAX_CHUNKS_PER_DOCUMENT } from "@/lib/constants";
+import { requireAuthenticatedUser } from "@/lib/auth";
 import { badRequest, getErrorMessage, toResponseError } from "@/lib/errors";
 import { embedTexts } from "@/lib/gemini";
 import { parseDocumentInput } from "@/lib/ingest";
@@ -8,21 +8,40 @@ import { getSessionIdFromRequest } from "@/lib/session";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { chunkPages } from "@/lib/text";
 import type { DocumentRecord } from "@/lib/types";
+import { requireOwnedChat } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const documentSelect =
+  "id,title,source_type,status,chunk_count,error_message,selected,created_at,updated_at";
+
+const selectionSchema = z.object({
+  chatId: z.uuid(),
+  documentIds: z.array(z.uuid()).max(100),
+  selected: z.boolean(),
+});
+
 export async function GET(request: Request) {
   try {
-    const sessionId = getSessionIdFromRequest(request);
+    const url = new URL(request.url);
+    const chatId = url.searchParams.get("chatId");
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    let query = supabase
       .from("documents")
-      .select(
-        "id,title,source_type,status,chunk_count,error_message,created_at,updated_at",
-      )
-      .eq("session_id", sessionId)
+      .select(documentSelect)
       .order("created_at", { ascending: false });
+
+    if (chatId) {
+      const user = await requireAuthenticatedUser();
+      await requireOwnedChat(supabase, user.id, chatId);
+      query = query.eq("user_id", user.id).eq("chat_id", chatId);
+    } else {
+      const sessionId = getSessionIdFromRequest(request);
+      query = query.eq("session_id", sessionId).is("user_id", null);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
@@ -37,6 +56,19 @@ export async function POST(request: Request) {
 
   try {
     const input = await parseDocumentInput(request);
+    const supabase = getSupabaseAdmin();
+    let userId: string | null = null;
+    let folderId: string | null = null;
+
+    if (input.chatId) {
+      const user = await requireAuthenticatedUser();
+      const chat = await requireOwnedChat(supabase, user.id, input.chatId);
+      userId = user.id;
+      folderId = chat.folder_id;
+    } else if (!input.sessionId) {
+      throw badRequest("A valid sessionId or chatId is required.");
+    }
+
     const chunks = chunkPages(input.pages);
 
     if (chunks.length === 0) {
@@ -53,13 +85,15 @@ export async function POST(request: Request) {
       (total, page) => total + page.text.length,
       0,
     );
-    const supabase = getSupabaseAdmin();
-
     const { data: document, error: documentError } = await supabase
       .from("documents")
       .insert({
         title: input.title,
         session_id: input.sessionId,
+        user_id: userId,
+        folder_id: folderId,
+        chat_id: input.chatId,
+        selected: true,
         source_type: input.sourceType,
         status: "indexing",
         chunk_count: 0,
@@ -69,9 +103,7 @@ export async function POST(request: Request) {
           pageCount: input.pages.length,
         },
       })
-      .select(
-        "id,title,source_type,status,chunk_count,error_message,created_at,updated_at",
-      )
+      .select(documentSelect)
       .single();
 
     if (documentError) throw documentError;
@@ -108,9 +140,7 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", document.id)
-      .select(
-        "id,title,source_type,status,chunk_count,error_message,created_at,updated_at",
-      )
+      .select(documentSelect)
       .single();
 
     if (updateError) throw updateError;
@@ -124,6 +154,35 @@ export async function POST(request: Request) {
       await markDocumentFailed(documentId, getErrorMessage(error));
     }
 
+    return toResponseError(error);
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = selectionSchema.parse(await request.json());
+    const user = await requireAuthenticatedUser();
+    const supabase = getSupabaseAdmin();
+    await requireOwnedChat(supabase, user.id, body.chatId);
+
+    if (body.documentIds.length === 0) {
+      return Response.json({ ok: true });
+    }
+
+    const { error } = await supabase
+      .from("documents")
+      .update({
+        selected: body.selected,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("user_id", user.id)
+      .eq("chat_id", body.chatId)
+      .in("id", body.documentIds);
+
+    if (error) throw error;
+
+    return Response.json({ ok: true });
+  } catch (error) {
     return toResponseError(error);
   }
 }

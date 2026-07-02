@@ -15,6 +15,18 @@ export function badRequest(message: string, code = "BAD_REQUEST") {
   return new AppError(message, 400, code);
 }
 
+export function unauthorized(message: string, code = "UNAUTHORIZED") {
+  return new AppError(message, 401, code);
+}
+
+export function forbidden(message: string, code = "FORBIDDEN") {
+  return new AppError(message, 403, code);
+}
+
+export function notFound(message: string, code = "NOT_FOUND") {
+  return new AppError(message, 404, code);
+}
+
 export function configurationError(message: string) {
   return new AppError(message, 500, "CONFIGURATION_ERROR");
 }

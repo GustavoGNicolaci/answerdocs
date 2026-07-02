@@ -5,13 +5,18 @@ import {
   NO_SELECTED_DOCUMENT_ANSWER,
   SELECTED_DOCUMENTS_FALLBACK_ANSWER,
 } from "@/lib/constants";
-import { embedText, generateGroundedAnswer } from "@/lib/gemini";
+import {
+  embedText,
+  generateConversationalAnswer,
+  generateGroundedAnswer,
+} from "@/lib/gemini";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import type { MatchDocumentChunk } from "@/lib/types";
 import { POST } from "./route";
 
 vi.mock("@/lib/gemini", () => ({
   embedText: vi.fn(),
+  generateConversationalAnswer: vi.fn(),
   generateGroundedAnswer: vi.fn(),
 }));
 
@@ -90,6 +95,7 @@ describe("chat route", () => {
     expect(payload).toEqual({ answer: NO_CONTEXT_ANSWER, citations: [] });
     expect(embedText).not.toHaveBeenCalled();
     expect(generateGroundedAnswer).not.toHaveBeenCalled();
+    expect(generateConversationalAnswer).not.toHaveBeenCalled();
     expect(rpc).not.toHaveBeenCalled();
   });
 
@@ -109,6 +115,38 @@ describe("chat route", () => {
       answer: LOCALIZED_CHAT_MESSAGES.pt.noContext,
       citations: [],
     });
+    expect(embedText).not.toHaveBeenCalled();
+    expect(generateGroundedAnswer).not.toHaveBeenCalled();
+    expect(generateConversationalAnswer).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("can answer from current conversation history without document context", async () => {
+    const { rpc } = mockSupabase({ readyDocumentCounts: [0] });
+    vi.mocked(generateConversationalAnswer).mockResolvedValue(
+      "It means the refund window is 30 days.",
+    );
+
+    const response = await POST(
+      jsonRequest({
+        sessionId,
+        question: "Explain that in more detail.",
+        history: [
+          {
+            question: "What is the refund window?",
+            answer: "The refund window is 30 days.",
+          },
+        ],
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      answer: "It means the refund window is 30 days.",
+      citations: [],
+    });
+    expect(generateConversationalAnswer).toHaveBeenCalled();
     expect(embedText).not.toHaveBeenCalled();
     expect(generateGroundedAnswer).not.toHaveBeenCalled();
     expect(rpc).not.toHaveBeenCalled();
@@ -213,7 +251,7 @@ describe("chat route", () => {
 
   it("filters ready context checks by selected document ids", async () => {
     const { countQueries, rpc } = mockSupabase({
-      readyDocumentCounts: [1, 0],
+      readyDocumentCounts: [0],
     });
 
     const response = await POST(
@@ -230,7 +268,7 @@ describe("chat route", () => {
       answer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
       citations: [],
     });
-    expect(countQueries[1]?.in).toHaveBeenCalledWith("id", [documentId]);
+    expect(countQueries[0]?.in).toHaveBeenCalledWith("id", [documentId]);
     expect(rpc).not.toHaveBeenCalled();
   });
 
@@ -254,7 +292,7 @@ describe("chat route", () => {
       answer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
       citations: [],
     });
-    expect(countQueries[1]?.in).toHaveBeenCalledWith("id", [documentId]);
+    expect(countQueries[0]?.in).toHaveBeenCalledWith("id", [documentId]);
     expect(generateGroundedAnswer).not.toHaveBeenCalled();
     expect(rpc).toHaveBeenCalledWith(
       "match_document_chunks",
@@ -374,11 +412,13 @@ function createCountQuery(count: number) {
   const query = {
     eq: vi.fn(),
     in: vi.fn(),
+    is: vi.fn(),
     then: vi.fn(),
   };
 
   query.eq.mockReturnValue(query);
   query.in.mockReturnValue(query);
+  query.is.mockReturnValue(query);
   query.then.mockImplementation((resolve, reject) =>
     Promise.resolve({ count, error: null }).then(resolve, reject),
   );

@@ -10,31 +10,39 @@ import { normalizeText } from "@/lib/text";
 import type { DocumentInput } from "@/lib/types";
 
 const jsonDocumentSchema = z.object({
-  sessionId: sessionIdSchema,
+  sessionId: sessionIdSchema.optional(),
+  chatId: z.uuid().optional(),
   title: z.string().trim().max(120).optional(),
   text: z.string().trim().min(1).max(MAX_TEXT_CHARACTERS),
 });
+
+type InputScope = {
+  sessionId: string | null;
+  chatId: string | null;
+};
 
 export async function parseDocumentInput(request: Request): Promise<DocumentInput> {
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
     const body = jsonDocumentSchema.parse(await request.json());
-    return createTextInput(body.text, body.sessionId, body.title);
+    return createTextInput(body.text, toInputScope(body), body.title);
   }
 
   const formData = await request.formData();
-  const sessionId = parseSessionId(stringValue(formData.get("sessionId")));
+  const sessionId = parseOptionalSessionId(stringValue(formData.get("sessionId")));
+  const chatId = parseOptionalUuid(stringValue(formData.get("chatId")), "chatId");
   const title = stringValue(formData.get("title"));
   const pastedText = stringValue(formData.get("text"));
   const file = formData.get("file");
+  const scope = { sessionId, chatId };
 
   if (file instanceof File && file.size > 0) {
-    return parseFileInput(file, sessionId, title);
+    return parseFileInput(file, scope, title);
   }
 
   if (pastedText) {
-    return createTextInput(pastedText, sessionId, title);
+    return createTextInput(pastedText, scope, title);
   }
 
   throw badRequest("Upload a PDF, upload a text file, or paste text to index.");
@@ -42,7 +50,7 @@ export async function parseDocumentInput(request: Request): Promise<DocumentInpu
 
 async function parseFileInput(
   file: File,
-  sessionId: string,
+  scope: InputScope,
   title?: string,
 ): Promise<DocumentInput> {
   if (file.size > MAX_FILE_BYTES) {
@@ -58,7 +66,7 @@ async function parseFileInput(
     const pages = await extractPdfPages(buffer);
 
     return {
-      sessionId,
+      ...scope,
       title: documentTitle,
       sourceType: "pdf",
       pages,
@@ -74,7 +82,7 @@ async function parseFileInput(
     const text = await file.text();
     return createTextInput(
       text,
-      sessionId,
+      scope,
       documentTitle,
       {
         originalName: filename,
@@ -89,7 +97,7 @@ async function parseFileInput(
 
 function createTextInput(
   value: string,
-  sessionId: string,
+  scope: InputScope,
   title = "Pasted text",
   metadata: Record<string, unknown> = {},
 ): DocumentInput {
@@ -104,7 +112,7 @@ function createTextInput(
   }
 
   return {
-    sessionId,
+    ...scope,
     title: sanitizeTitle(title),
     sourceType: "text",
     pages: [{ pageNumber: null, text }],
@@ -114,6 +122,28 @@ function createTextInput(
 
 function stringValue(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : undefined;
+}
+
+function parseOptionalSessionId(value: string | undefined) {
+  return value ? parseSessionId(value) : null;
+}
+
+function parseOptionalUuid(value: string | undefined, fieldName: string) {
+  if (!value) return null;
+
+  const parsed = z.uuid().safeParse(value);
+  if (!parsed.success) {
+    throw badRequest(`A valid ${fieldName} is required.`);
+  }
+
+  return parsed.data;
+}
+
+function toInputScope(input: { sessionId?: string; chatId?: string }) {
+  return {
+    sessionId: input.sessionId ?? null,
+    chatId: input.chatId ?? null,
+  };
 }
 
 function sanitizeTitle(value: string) {

@@ -102,3 +102,25 @@ export async function generateGroundedAnswer(
 
   return response.text?.trim() || "";
 }
+
+export async function generateConversationalAnswer(
+  prompt: string,
+  options: GenerateAnswerOptions,
+) {
+  const fallbackAnswer = options.fallbackAnswer ?? FALLBACK_ANSWER;
+  const languageName = getResponseLanguageName(options.responseLanguage ?? "en");
+
+  const response = await getGeminiClient().models.generateContent({
+    model: GEMINI_CHAT_MODEL,
+    contents: prompt,
+    config: {
+      maxOutputTokens: 700,
+      responseMimeType: "text/plain",
+      temperature: 0.2,
+      systemInstruction:
+        `You are AnswerDocs, a careful assistant. Answer in ${languageName}, matching the current user message. Use only the provided conversation history for continuity. Do not use external knowledge, do not invent document facts, and do not cite references. If the available history is insufficient, say exactly: ${fallbackAnswer}`,
+    },
+  });
+
+  return response.text?.trim() || "";
+}

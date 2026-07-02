@@ -7,7 +7,8 @@ export type SourcePage = {
 };
 
 export type DocumentInput = {
-  sessionId: string;
+  sessionId: string | null;
+  chatId: string | null;
   title: string;
   sourceType: SourceType;
   pages: SourcePage[];
@@ -27,6 +28,7 @@ export type DocumentRecord = {
   status: DocumentStatus;
   chunk_count: number;
   error_message: string | null;
+  selected: boolean;
   created_at: string;
   updated_at: string;
 };
