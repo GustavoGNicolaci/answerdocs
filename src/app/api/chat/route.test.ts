@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FALLBACK_ANSWER, NO_CONTEXT_ANSWER } from "@/lib/constants";
+import {
+  NO_CONTEXT_ANSWER,
+  NO_SELECTED_DOCUMENT_ANSWER,
+  SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+} from "@/lib/constants";
 import { embedText, generateGroundedAnswer } from "@/lib/gemini";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import type { MatchDocumentChunk } from "@/lib/types";
@@ -71,7 +75,7 @@ describe("chat route", () => {
   });
 
   it("returns a clear no-context answer without calling Gemini or RPC", async () => {
-    const { rpc } = mockSupabase({ readyDocumentCount: 0 });
+    const { rpc } = mockSupabase({ readyDocumentCounts: [0] });
 
     const response = await POST(
       jsonRequest({
@@ -98,15 +102,16 @@ describe("chat route", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.answer).toContain("attaching a PDF");
+    expect(payload.answer).toContain("uploading a PDF or .txt file");
+    expect(payload.answer).toContain("dragging a PDF");
+    expect(payload.answer).toContain("pasting a PDF");
     expect(payload.citations).toEqual([]);
     expect(getSupabaseAdmin).not.toHaveBeenCalled();
     expect(embedText).not.toHaveBeenCalled();
   });
 
-  it("passes the session id to semantic search", async () => {
-    const { rpc } = mockSupabase({ readyDocumentCount: 1 });
-    vi.mocked(embedText).mockResolvedValue(new Array(768).fill(0));
+  it("does not search ready documents when none are selected", async () => {
+    const { rpc } = mockSupabase({ readyDocumentCounts: [1] });
 
     const response = await POST(
       jsonRequest({
@@ -117,20 +122,39 @@ describe("chat route", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload).toEqual({ answer: FALLBACK_ANSWER, citations: [] });
+    expect(payload).toEqual({
+      answer: NO_SELECTED_DOCUMENT_ANSWER,
+      citations: [],
+    });
+    expect(embedText).not.toHaveBeenCalled();
     expect(generateGroundedAnswer).not.toHaveBeenCalled();
-    expect(rpc).toHaveBeenCalledWith(
-      "match_document_chunks",
-      expect.objectContaining({
-        filter_session_id: sessionId,
-        filter_document_ids: null,
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("treats an empty document selection as no active document scope", async () => {
+    const { rpc } = mockSupabase({ readyDocumentCounts: [1] });
+
+    const response = await POST(
+      jsonRequest({
+        sessionId,
+        question: "What does the document say?",
+        documentIds: [],
       }),
     );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      answer: NO_SELECTED_DOCUMENT_ANSWER,
+      citations: [],
+    });
+    expect(embedText).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("filters ready context checks by selected document ids", async () => {
-    const { countQuery, rpc } = mockSupabase({
-      readyDocumentCount: 0,
+    const { countQueries, rpc } = mockSupabase({
+      readyDocumentCounts: [1, 0],
     });
 
     const response = await POST(
@@ -143,13 +167,47 @@ describe("chat route", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload).toEqual({ answer: NO_CONTEXT_ANSWER, citations: [] });
-    expect(countQuery.in).toHaveBeenCalledWith("id", [documentId]);
+    expect(payload).toEqual({
+      answer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+      citations: [],
+    });
+    expect(countQueries[1]?.in).toHaveBeenCalledWith("id", [documentId]);
     expect(rpc).not.toHaveBeenCalled();
   });
 
+  it("passes selected document ids to semantic search", async () => {
+    const { countQueries, rpc } = mockSupabase({
+      readyDocumentCounts: [1, 1],
+    });
+    vi.mocked(embedText).mockResolvedValue(new Array(768).fill(0));
+
+    const response = await POST(
+      jsonRequest({
+        sessionId,
+        question: "What does the selected document say?",
+        documentIds: [documentId],
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      answer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+      citations: [],
+    });
+    expect(countQueries[1]?.in).toHaveBeenCalledWith("id", [documentId]);
+    expect(generateGroundedAnswer).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith(
+      "match_document_chunks",
+      expect.objectContaining({
+        filter_session_id: sessionId,
+        filter_document_ids: [documentId],
+      }),
+    );
+  });
+
   it("limits returned citations and removes hidden markers", async () => {
-    mockSupabase({ readyDocumentCount: 4, rpcData: matches });
+    mockSupabase({ readyDocumentCounts: [4, 1], rpcData: matches });
     vi.mocked(embedText).mockResolvedValue(new Array(768).fill(0));
     vi.mocked(generateGroundedAnswer).mockResolvedValue(
       "Policy.pdf covers refunds [1]. Handbook.pdf covers support [2]. Guide.pdf covers onboarding [3]. Terms.pdf covers renewal [4].",
@@ -159,6 +217,7 @@ describe("chat route", () => {
       jsonRequest({
         sessionId,
         question: "Summarize the policies.",
+        documentIds: [documentId],
       }),
     );
     const payload = await response.json();
@@ -181,20 +240,28 @@ function jsonRequest(body: unknown) {
 }
 
 function mockSupabase({
-  readyDocumentCount,
+  readyDocumentCounts,
   rpcData = [],
 }: {
-  readyDocumentCount: number;
+  readyDocumentCounts: number[];
   rpcData?: MatchDocumentChunk[];
 }) {
-  const countQuery = createCountQuery(readyDocumentCount);
-  const select = vi.fn(() => countQuery);
+  const countQueries: Array<ReturnType<typeof createCountQuery>> = [];
+  const select = vi.fn(() => {
+    const count =
+      readyDocumentCounts[
+        Math.min(countQueries.length, readyDocumentCounts.length - 1)
+      ] ?? 0;
+    const countQuery = createCountQuery(count);
+    countQueries.push(countQuery);
+    return countQuery;
+  });
   const from = vi.fn(() => ({ select }));
   const rpc = vi.fn().mockResolvedValue({ data: rpcData, error: null });
 
   vi.mocked(getSupabaseAdmin).mockReturnValue({ from, rpc } as never);
 
-  return { countQuery, from, rpc, select };
+  return { countQueries, from, rpc, select };
 }
 
 function createCountQuery(count: number) {

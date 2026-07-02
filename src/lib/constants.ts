@@ -15,5 +15,9 @@ export const MATCH_THRESHOLD = 0.5;
 export const MAX_PUBLIC_CITATIONS = 3;
 export const FALLBACK_ANSWER =
   "I could not find enough information in the uploaded documents to answer that.";
+export const SELECTED_DOCUMENTS_FALLBACK_ANSWER =
+  "I could not find enough information in the selected documents to answer that.";
 export const NO_CONTEXT_ANSWER =
   "There is no file or context loaded to consult. Upload a document or paste text so I can answer from it.";
+export const NO_SELECTED_DOCUMENT_ANSWER =
+  "There are documents available, but none are selected. Select at least one document to ask from it.";

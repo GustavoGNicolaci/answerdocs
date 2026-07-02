@@ -4,6 +4,7 @@ import type { Citation, MatchDocumentChunk } from "@/lib/types";
 export function buildAnswerPrompt(
   question: string,
   matches: MatchDocumentChunk[],
+  fallbackAnswer = FALLBACK_ANSWER,
 ) {
   const context = matches
     .map((match, index) => {
@@ -29,7 +30,7 @@ export function buildAnswerPrompt(
     "- Mention the source file name when citing a fact.",
     "- Do not invent facts, file names, page numbers, or citations.",
     "- Do not mention similarity, precision, confidence, ranking, scores, or percentages.",
-    `- If the context does not answer the question, reply exactly: ${FALLBACK_ANSWER}`,
+    `- If the context does not answer the question, reply exactly: ${fallbackAnswer}`,
     "",
     "Context:",
     context,
@@ -68,9 +69,9 @@ export function createCitations(
     });
 }
 
-export function normalizeAnswer(answer: string) {
+export function normalizeAnswer(answer: string, fallbackAnswer = FALLBACK_ANSWER) {
   const trimmed = answer.trim();
-  return trimmed.length > 0 ? trimmed : FALLBACK_ANSWER;
+  return trimmed.length > 0 ? trimmed : fallbackAnswer;
 }
 
 export function hasInvalidCitationIndexes(answer: string, sourceCount: number) {

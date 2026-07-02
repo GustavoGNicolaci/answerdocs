@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { FALLBACK_ANSWER } from "@/lib/constants";
+import {
+  FALLBACK_ANSWER,
+  SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+} from "@/lib/constants";
 import {
   buildAnswerPrompt,
   createCitations,
@@ -64,6 +67,17 @@ describe("rag utilities", () => {
     expect(prompt).toContain("never cite more than 3 snippets");
     expect(prompt).not.toContain("Similarity:");
     expect(prompt).not.toContain("0.87");
+  });
+
+  it("supports a selected-document fallback in the grounded prompt", () => {
+    const prompt = buildAnswerPrompt(
+      "What is the refund window?",
+      matches,
+      SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+    );
+
+    expect(prompt).toContain(SELECTED_DOCUMENTS_FALLBACK_ANSWER);
+    expect(prompt).not.toContain(FALLBACK_ANSWER);
   });
 
   it("maps only cited chunks to public citations", () => {
@@ -149,5 +163,11 @@ describe("rag utilities", () => {
 
   it("falls back when the model returns empty text", () => {
     expect(normalizeAnswer("  ")).toBe(FALLBACK_ANSWER);
+  });
+
+  it("normalizes empty text with a selected-document fallback", () => {
+    expect(normalizeAnswer("  ", SELECTED_DOCUMENTS_FALLBACK_ANSWER)).toBe(
+      SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+    );
   });
 });

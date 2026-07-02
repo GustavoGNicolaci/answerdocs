@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import {
   EMBEDDING_DIMENSIONS,
+  FALLBACK_ANSWER,
   GEMINI_CHAT_MODEL,
   GEMINI_EMBEDDING_MODEL,
   MAX_PUBLIC_CITATIONS,
@@ -68,7 +69,10 @@ export async function embedTexts(requests: EmbedRequest[]) {
   return results;
 }
 
-export async function generateGroundedAnswer(prompt: string) {
+export async function generateGroundedAnswer(
+  prompt: string,
+  fallbackAnswer = FALLBACK_ANSWER,
+) {
   const response = await getGeminiClient().models.generateContent({
     model: GEMINI_CHAT_MODEL,
     contents: prompt,
@@ -77,7 +81,7 @@ export async function generateGroundedAnswer(prompt: string) {
       responseMimeType: "text/plain",
       temperature: 0.2,
       systemInstruction:
-        `You are AnswerDocs, a careful document question-answering assistant. Answer in English. Use only the provided context. Mention source file names when using facts, and cite only the necessary supporting snippets with bracketed citation numbers such as [1] and [2]. Never use more than ${MAX_PUBLIC_CITATIONS} citations. Never mention similarity, precision, confidence, ranking, scores, or percentages. If the context is insufficient, say exactly: I could not find enough information in the uploaded documents to answer that.`,
+        `You are AnswerDocs, a careful document question-answering assistant. Answer in English. Use only the provided context. Mention source file names when using facts, and cite only the necessary supporting snippets with bracketed citation numbers such as [1] and [2]. Never use more than ${MAX_PUBLIC_CITATIONS} citations. Never mention similarity, precision, confidence, ranking, scores, or percentages. If the context is insufficient, say exactly: ${fallbackAnswer}`,
     },
   });
 

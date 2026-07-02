@@ -10,7 +10,6 @@ import {
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
-  Paperclip,
   Quote,
   Search,
   Send,
@@ -76,7 +75,6 @@ type ChatTurn = {
 type UploadMode = "file" | "text";
 
 export function RagWorkspace() {
-  const chatFileInputRef = useRef<HTMLInputElement>(null);
   const chatFormRef = useRef<HTMLFormElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -262,8 +260,7 @@ export function RagWorkspace() {
         body: JSON.stringify({
           sessionId,
           question: nextQuestion,
-          documentIds:
-            selectedDocumentIds.length > 0 ? selectedDocumentIds : undefined,
+          documentIds: selectedDocumentIds,
         }),
       });
       const payload = await readPayload<{
@@ -562,20 +559,38 @@ export function RagWorkspace() {
                     <TabsContent value="file">
                       <div className="space-y-2">
                         <Label htmlFor="document-file">File</Label>
-                        <Input
+                        <label
+                          htmlFor="document-file"
+                          className={cn(
+                            "flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-border bg-background/70 px-4 py-3 text-sm shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary hover:bg-secondary/75 hover:shadow-[var(--shadow-subtle)]",
+                            (uploading || !sessionId) &&
+                              "pointer-events-none cursor-not-allowed opacity-60",
+                          )}
+                        >
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
+                            <Upload className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block font-medium">
+                              {file ? "Change file" : "Select file"}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {file
+                                ? `${file.name} - ${formatBytes(file.size)}`
+                                : "PDF or .txt, up to 10 MB"}
+                            </span>
+                          </span>
+                        </label>
+                        <input
                           id="document-file"
                           type="file"
                           accept="application/pdf,text/plain,.pdf,.txt"
                           disabled={uploading || !sessionId}
+                          className="sr-only"
                           onChange={(event) =>
                             setFile(event.target.files?.[0] ?? null)
                           }
                         />
-                        <p className="text-xs text-muted-foreground">
-                          {file
-                            ? `${file.name} - ${formatBytes(file.size)}`
-                            : "PDF or .txt, up to 10 MB"}
-                        </p>
                       </div>
                     </TabsContent>
 
@@ -611,16 +626,32 @@ export function RagWorkspace() {
 
                 <Separator className="my-5" />
 
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <h2 className="text-sm font-semibold">Indexed files</h2>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setSelectedDocumentIds([])}
-                  >
-                    All
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={readyDocuments.length === 0}
+                      onClick={() =>
+                        setSelectedDocumentIds(
+                          readyDocuments.map((document) => document.id),
+                        )
+                      }
+                    >
+                      Select all
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={selectedDocumentIds.length === 0}
+                      onClick={() => setSelectedDocumentIds([])}
+                    >
+                      Clear
+                    </Button>
+                  </div>
                 </div>
 
                 <ScrollArea className="mt-3 min-h-0 flex-1 pr-3">
@@ -708,7 +739,7 @@ export function RagWorkspace() {
                   {selectedDocumentIds.length > 0
                     ? `${selectedDocumentIds.length} selected`
                     : readyDocuments.length > 0
-                      ? "This chat's ready documents"
+                      ? "Select documents to ask from"
                       : "No context loaded yet"}
                 </p>
               </div>
@@ -802,7 +833,7 @@ export function RagWorkspace() {
                                         </p>
                                       </div>
                                     </div>
-                                    <p className="mt-3 max-h-28 overflow-hidden text-xs leading-5 text-muted-foreground">
+                                    <p className="mt-3 max-h-44 overflow-y-auto whitespace-pre-wrap pr-2 text-xs leading-5 text-muted-foreground">
                                       {citation.snippet}
                                     </p>
                                   </div>
@@ -852,32 +883,15 @@ export function RagWorkspace() {
                     onKeyDown={handleQuestionKeyDown}
                     onPaste={handleQuestionPaste}
                     placeholder="Ask about your documents or paste a PDF/text context"
-                    className="min-h-32 border-0 bg-transparent pb-16 pl-11 pr-28 shadow-none focus-visible:ring-0"
+                    className="min-h-32 border-0 bg-transparent pb-14 pl-11 pr-28 shadow-none focus-visible:ring-0"
                     disabled={asking || uploadingChatAttachment || !sessionId}
                   />
-                  <div className="absolute bottom-3 left-3 flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="shadow-none"
-                      title="Attach PDF"
-                      disabled={uploadingChatAttachment || !sessionId}
-                      onClick={() => chatFileInputRef.current?.click()}
-                    >
-                      {uploadingChatAttachment ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Paperclip className="h-4 w-4" />
-                      )}
-                      PDF
-                    </Button>
-                    {uploadingChatAttachment ? (
-                      <span className="text-xs text-muted-foreground">
-                        Indexing context
-                      </span>
-                    ) : null}
-                  </div>
+                  {uploadingChatAttachment ? (
+                    <div className="absolute bottom-4 left-4 flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-foreground" />
+                      Indexing context
+                    </div>
+                  ) : null}
                   <Button
                     type="submit"
                     className="absolute bottom-3 right-3"
@@ -896,17 +910,6 @@ export function RagWorkspace() {
                     </div>
                   ) : null}
                 </section>
-                <input
-                  ref={chatFileInputRef}
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  className="hidden"
-                  onChange={(event) => {
-                    const nextFile = event.target.files?.[0];
-                    event.currentTarget.value = "";
-                    if (nextFile) void handleChatPdfFile(nextFile);
-                  }}
-                />
               </form>
             </div>
           </div>

@@ -1,9 +1,10 @@
 import { z } from "zod";
 import {
-  FALLBACK_ANSWER,
   MATCH_COUNT,
   MATCH_THRESHOLD,
   NO_CONTEXT_ANSWER,
+  NO_SELECTED_DOCUMENT_ANSWER,
+  SELECTED_DOCUMENTS_FALLBACK_ANSWER,
 } from "@/lib/constants";
 import { toResponseError } from "@/lib/errors";
 import { embedText, generateGroundedAnswer } from "@/lib/gemini";
@@ -38,14 +39,34 @@ export async function POST(request: Request) {
     }
 
     const supabase = getSupabaseAdmin();
-    const hasContext = await hasReadyDocumentContext(
+    const selectedDocumentIds = body.documentIds ?? [];
+    const hasAnyReadyContext = await hasReadyDocumentContext(
       supabase,
       body.sessionId,
-      body.documentIds,
     );
 
-    if (!hasContext) {
+    if (!hasAnyReadyContext) {
       return Response.json({ answer: NO_CONTEXT_ANSWER, citations: [] });
+    }
+
+    if (selectedDocumentIds.length === 0) {
+      return Response.json({
+        answer: NO_SELECTED_DOCUMENT_ANSWER,
+        citations: [],
+      });
+    }
+
+    const hasSelectedContext = await hasReadyDocumentContext(
+      supabase,
+      body.sessionId,
+      selectedDocumentIds,
+    );
+
+    if (!hasSelectedContext) {
+      return Response.json({
+        answer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+        citations: [],
+      });
     }
 
     const queryEmbedding = await embedText({
@@ -58,10 +79,7 @@ export async function POST(request: Request) {
       filter_session_id: body.sessionId,
       match_threshold: MATCH_THRESHOLD,
       match_count: MATCH_COUNT,
-      filter_document_ids:
-        body.documentIds && body.documentIds.length > 0
-          ? body.documentIds
-          : null,
+      filter_document_ids: selectedDocumentIds,
     });
 
     if (error) throw error;
@@ -69,26 +87,41 @@ export async function POST(request: Request) {
     const matches = (data ?? []) as MatchDocumentChunk[];
 
     if (matches.length === 0) {
-      return Response.json({ answer: FALLBACK_ANSWER, citations: [] });
+      return Response.json({
+        answer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+        citations: [],
+      });
     }
 
     const answer = normalizeAnswer(
-      await generateGroundedAnswer(buildAnswerPrompt(body.question, matches)),
+      await generateGroundedAnswer(
+        buildAnswerPrompt(
+          body.question,
+          matches,
+          SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+        ),
+        SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+      ),
+      SELECTED_DOCUMENTS_FALLBACK_ANSWER,
     );
     const citations =
-      answer === FALLBACK_ANSWER || hasInvalidCitationIndexes(answer, matches.length)
+      answer === SELECTED_DOCUMENTS_FALLBACK_ANSWER ||
+      hasInvalidCitationIndexes(answer, matches.length)
         ? []
         : createCitations(matches, answer);
 
-    if (answer !== FALLBACK_ANSWER && citations.length === 0) {
-      return Response.json({ answer: FALLBACK_ANSWER, citations: [] });
+    if (answer !== SELECTED_DOCUMENTS_FALLBACK_ANSWER && citations.length === 0) {
+      return Response.json({
+        answer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+        citations: [],
+      });
     }
 
     return Response.json({
       answer:
         citations.length > 0
           ? removeHiddenCitationMarkers(answer, citations)
-          : FALLBACK_ANSWER,
+          : SELECTED_DOCUMENTS_FALLBACK_ANSWER,
       citations,
     });
   } catch (error) {

@@ -5,7 +5,7 @@ export function getSystemHelpAnswer(question: string) {
   if (!normalized) return null;
 
   if (asksAboutUploading(normalized)) {
-    return "You can add context by uploading a PDF or .txt file from the document panel, attaching a PDF from the chat composer, dragging a PDF into the chat, or pasting longer text directly into the chat.";
+    return "You can add context by uploading a PDF or .txt file from the document panel, dragging a PDF into the chat, pasting a PDF into the chat, or pasting longer text directly into the chat.";
   }
 
   if (asksAboutCitations(normalized)) {
@@ -13,7 +13,7 @@ export function getSystemHelpAnswer(question: string) {
   }
 
   if (asksAboutScope(normalized)) {
-    return "This chat uses only ready documents and pasted context from the current browser-tab session. Selecting files narrows the scope further, and documents outside that scope are not used.";
+    return "This chat uses only selected ready documents and pasted context from the current browser-tab session. Documents that are available but not selected are not used.";
   }
 
   if (asksAboutPurpose(normalized)) {
