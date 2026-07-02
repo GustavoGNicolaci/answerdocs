@@ -114,20 +114,46 @@ export async function ensureWorkspace(supabase: SupabaseAdmin, userId: string) {
     folders = await listFolders(supabase, userId);
   }
 
-  let chats = await listChats(supabase, userId);
-
-  if (chats.length === 0 && folders[0]) {
-    const { error } = await supabase.from("chats").insert({
-      user_id: userId,
-      folder_id: folders[0].id,
-      title: "New chat",
-    });
-
-    if (error) throw error;
-    chats = await listChats(supabase, userId);
+  for (const folder of folders) {
+    await ensureFolderHasChat(supabase, userId, folder.id);
   }
 
+  const chats = await listChats(supabase, userId);
+
   return { folders, chats };
+}
+
+export async function ensureFolderHasChat(
+  supabase: SupabaseAdmin,
+  userId: string,
+  folderId: string,
+) {
+  const { data: existingChats, error: existingChatsError } = await supabase
+    .from("chats")
+    .select("id,user_id,folder_id,title,created_at,updated_at")
+    .eq("user_id", userId)
+    .eq("folder_id", folderId)
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (existingChatsError) throw existingChatsError;
+
+  const existingChat = existingChats?.[0];
+  if (existingChat) return existingChat as ChatRecord;
+
+  const { data, error } = await supabase
+    .from("chats")
+    .insert({
+      user_id: userId,
+      folder_id: folderId,
+      title: "New chat",
+    })
+    .select("id,user_id,folder_id,title,created_at,updated_at")
+    .single();
+
+  if (error) throw error;
+  return data as ChatRecord;
 }
 
 export async function listFolders(supabase: SupabaseAdmin, userId: string) {

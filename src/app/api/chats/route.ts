@@ -3,6 +3,7 @@ import { requireAuthenticatedUser } from "@/lib/auth";
 import { toResponseError } from "@/lib/errors";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
+  ensureFolderHasChat,
   listChats,
   requireOwnedFolder,
   sanitizeWorkspaceName,
@@ -25,6 +26,8 @@ export async function GET(request: Request) {
 
     if (folderId) {
       await requireOwnedFolder(supabase, user.id, folderId);
+      await ensureFolderHasChat(supabase, user.id, folderId);
+      chats = await listChats(supabase, user.id);
       chats = chats.filter((chat) => chat.folder_id === folderId);
     }
 

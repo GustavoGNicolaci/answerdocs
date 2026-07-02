@@ -36,6 +36,7 @@ import {
   useRef,
   useState,
 } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -89,7 +90,6 @@ type ChatTurn = {
 };
 
 type UploadMode = "file" | "text";
-type AuthMode = "login" | "signup";
 
 type AuthUser = {
   id: string;
@@ -126,13 +126,7 @@ export function RagWorkspace() {
   const [authChecked, setAuthChecked] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<ProfileItem | null>(null);
-  const [authMode, setAuthMode] = useState<AuthMode>("login");
-  const [authName, setAuthName] = useState("");
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [authConfirmPassword, setAuthConfirmPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
-  const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [chats, setChats] = useState<SavedChatItem[]>([]);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
@@ -163,6 +157,7 @@ export function RagWorkspace() {
   );
   const authUserId = authUser?.id ?? null;
   const isAuthenticated = Boolean(authUserId);
+  const accountLabel = getAccountLabel(profile, authUser);
   const activeFolder = useMemo(
     () => folders.find((folder) => folder.id === activeFolderId) ?? null,
     [activeFolderId, folders],
@@ -573,52 +568,6 @@ export function RagWorkspace() {
     }
   }
 
-  async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setAuthLoading(true);
-    setAuthMessage(null);
-    setError(null);
-
-    try {
-      const endpoint = authMode === "login" ? "/api/auth/login" : "/api/auth/signup";
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          authMode === "login"
-            ? { email: authEmail, password: authPassword }
-            : {
-                name: authName,
-                email: authEmail,
-                password: authPassword,
-                confirmPassword: authConfirmPassword,
-              },
-        ),
-      });
-      const payload = await readPayload<{
-        message?: string;
-        needsConfirmation?: boolean;
-      }>(response);
-      setAuthMessage(payload.message ?? "Signed in.");
-      setAuthPassword("");
-      setAuthConfirmPassword("");
-
-      if (payload.needsConfirmation) {
-        return;
-      }
-
-      setTurns([]);
-      setDocuments([]);
-      setSelectedDocumentIds([]);
-      await loadAuthSession();
-      await loadWorkspace();
-    } catch (requestError) {
-      setError(getClientError(requestError));
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
   async function handleSignOut() {
     setAuthLoading(true);
     setError(null);
@@ -658,9 +607,13 @@ export function RagWorkspace() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
-      const payload = await readPayload<{ folder: FolderItem }>(response);
-      await loadWorkspace();
+      const payload = await readPayload<{
+        folder: FolderItem;
+        chat?: SavedChatItem;
+      }>(response);
+      await loadWorkspace(payload.chat?.id);
       setActiveFolderId(payload.folder.id);
+      if (payload.chat) setActiveChatId(payload.chat.id);
     } catch (requestError) {
       setError(getClientError(requestError));
     }
@@ -981,66 +934,175 @@ export function RagWorkspace() {
 
   return (
     <main className="h-dvh overflow-hidden bg-background text-foreground">
-      <div
-        className={cn(
-          "grid h-dvh w-full grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden transition-[grid-template-columns] duration-300 ease-out lg:grid-rows-none",
-          isSidebarCollapsed
-            ? "lg:grid-cols-[72px_minmax(0,1fr)]"
-            : "lg:grid-cols-[380px_minmax(0,1fr)]",
-        )}
-      >
-        <aside className="max-h-[32dvh] min-w-0 overflow-y-auto border-b border-border/80 bg-card/80 shadow-[var(--shadow-subtle)] lg:max-h-none lg:overflow-hidden lg:border-b-0 lg:border-r lg:shadow-none">
+      <div className="grid h-dvh w-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+        <header className="z-20 flex min-h-16 items-center gap-3 border-b border-border/80 bg-background/90 px-3 py-2 shadow-[var(--shadow-subtle)] backdrop-blur sm:px-5">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Link
+              href="/"
+              className="flex shrink-0 items-center gap-2 rounded-2xl px-1 py-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
+                <Sparkles className="h-4 w-4" />
+              </span>
+              <span className="hidden text-base font-semibold tracking-tight sm:inline">
+                AnswerDocs
+              </span>
+            </Link>
+
+            <div className="hidden h-8 w-px bg-border/80 md:block" />
+
+            <nav
+              aria-label="Folders"
+              className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1"
+            >
+              {isAuthenticated ? (
+                <>
+                  {loadingWorkspace ? (
+                    <Badge variant="secondary" className="shrink-0 gap-2">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Loading folders
+                    </Badge>
+                  ) : folders.length === 0 ? (
+                    <Badge variant="outline" className="shrink-0">
+                      No folders
+                    </Badge>
+                  ) : (
+                    folders.map((folder) => {
+                      const active = folder.id === activeFolderId;
+
+                      return (
+                        <div
+                          key={folder.id}
+                          className={cn(
+                            "group/folder flex shrink-0 items-center rounded-2xl border border-border/80 bg-card/70 shadow-sm transition-all duration-200 hover:-translate-y-px hover:bg-secondary/70",
+                            active &&
+                              "border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90",
+                          )}
+                        >
+                          <button
+                            type="button"
+                            className="flex min-w-0 items-center gap-2 px-3 py-2 text-sm font-medium outline-none"
+                            onClick={() => setActiveFolderId(folder.id)}
+                          >
+                            <Folder className="h-4 w-4 shrink-0" />
+                            <span className="max-w-40 truncate">
+                              {folder.name}
+                            </span>
+                          </button>
+                          {active ? (
+                            <span className="mr-1 flex items-center gap-0.5">
+                              <button
+                                type="button"
+                                className="rounded-lg p-1 opacity-80 outline-none transition hover:bg-background/20 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+                                title={`Rename ${folder.name}`}
+                                onClick={() => void handleRenameFolder(folder)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-lg p-1 opacity-80 outline-none transition hover:bg-background/20 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+                                title={`Delete ${folder.name}`}
+                                onClick={() => void handleDeleteFolder(folder)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => void handleCreateFolder()}
+                  >
+                    <FolderPlus className="h-4 w-4" />
+                    New folder
+                  </Button>
+                </>
+              ) : (
+                <div className="flex min-w-0 items-center gap-2">
+                  <Badge variant="outline" className="shrink-0">
+                    Guest mode
+                  </Badge>
+                  <span className="hidden truncate text-xs text-muted-foreground md:inline">
+                    Sign in to save folders, chats, documents, and history.
+                  </span>
+                </div>
+              )}
+            </nav>
+          </div>
+
+          <div className="shrink-0">
+            {isAuthenticated ? (
+              <details className="group/account relative">
+                <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-border/80 bg-card/80 px-3 py-2 text-sm font-medium shadow-sm outline-none transition-all hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                  <span className="max-w-32 truncate sm:max-w-48">
+                    {accountLabel}
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-open/account:rotate-180" />
+                </summary>
+                <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-40 rounded-2xl border border-border/80 bg-card p-2 shadow-[var(--shadow-soft)]">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start"
+                    disabled={authLoading}
+                    onClick={() => void handleSignOut()}
+                  >
+                    {authLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <LogOut className="h-4 w-4" />
+                    )}
+                    Sign out
+                  </Button>
+                </div>
+              </details>
+            ) : (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/auth">
+                  <LogIn className="h-4 w-4" />
+                  Sign in
+                </Link>
+              </Button>
+            )}
+          </div>
+        </header>
+
+        <div
+          className={cn(
+            "grid min-h-0 w-full grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden transition-[grid-template-columns] duration-300 ease-out lg:grid-rows-none",
+            isSidebarCollapsed
+              ? "lg:grid-cols-[72px_minmax(0,1fr)]"
+              : "lg:grid-cols-[380px_minmax(0,1fr)]",
+          )}
+        >
+        <aside className="max-h-[38dvh] min-w-0 overflow-y-auto border-b border-border/80 bg-card/80 shadow-[var(--shadow-subtle)] lg:max-h-none lg:overflow-hidden lg:border-b-0 lg:border-r lg:shadow-none">
           <div
             className={cn(
               "flex h-full min-h-0 flex-col p-5 transition-all duration-300 ease-out",
               isSidebarCollapsed && "p-3",
             )}
           >
-            <div
-              className={cn(
-                "flex items-center gap-3",
-                isSidebarCollapsed && "lg:flex-col",
-              )}
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition-transform duration-200 hover:scale-105">
-                <Sparkles className="h-5 w-5" />
-              </div>
-              {!isSidebarCollapsed ? (
-                <div>
-                  <h1 className="text-lg font-semibold tracking-tight">
-                    AnswerDocs
-                  </h1>
-                  <p className="text-sm text-muted-foreground">RAG workspace</p>
-                </div>
-              ) : null}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className={cn("ml-auto", isSidebarCollapsed && "lg:ml-0")}
-                aria-label={
-                  isSidebarCollapsed
-                    ? "Expand document menu"
-                    : "Collapse document menu"
-                }
-                aria-expanded={!isSidebarCollapsed}
-                title={
-                  isSidebarCollapsed
-                    ? "Expand document menu"
-                    : "Collapse document menu"
-                }
-                onClick={() => setIsSidebarCollapsed((current) => !current)}
-              >
-                {isSidebarCollapsed ? (
-                  <PanelLeftOpen className="h-4 w-4" />
-                ) : (
-                  <PanelLeftClose className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-
             {isSidebarCollapsed ? (
-              <div className="mt-3 flex items-center gap-2 lg:mt-5 lg:flex-col">
+              <div className="flex items-center gap-2 lg:flex-col">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Expand document menu"
+                  aria-expanded={false}
+                  title="Expand document menu"
+                  onClick={() => setIsSidebarCollapsed(false)}
+                >
+                  <PanelLeftOpen className="h-4 w-4" />
+                </Button>
                 <Badge variant="secondary" className="gap-1">
                   <FileText className="h-3 w-3" />
                   <span>{readyDocuments.length}</span>
@@ -1052,273 +1114,35 @@ export function RagWorkspace() {
                     <span className="lg:hidden">selected</span>
                   </Badge>
                 ) : null}
+                {isAuthenticated ? (
+                  <Badge variant="outline" className="gap-1">
+                    <MessageSquare className="h-3 w-3" />
+                    <span>{visibleChats.length}</span>
+                    <span className="lg:hidden">chats</span>
+                  </Badge>
+                ) : null}
               </div>
             ) : (
               <>
-                <Separator className="my-5" />
-
-                <section className="animate-panel-in space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-semibold">Account</h2>
-                    <Badge variant={isAuthenticated ? "secondary" : "outline"}>
-                      {isAuthenticated ? "Saved" : "Guest"}
-                    </Badge>
-                  </div>
-
-                  {isAuthenticated ? (
-                    <div className="rounded-2xl border border-border/80 bg-background/65 p-3 shadow-sm">
-                      <p className="truncate text-sm font-medium">
-                        {profile?.full_name || authUser?.email || "Signed in"}
-                      </p>
-                      {authUser?.email ? (
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {authUser.email}
-                        </p>
-                      ) : null}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="mt-3 w-full justify-start"
-                        disabled={authLoading}
-                        onClick={() => void handleSignOut()}
-                      >
-                        {authLoading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <LogOut className="h-4 w-4" />
-                        )}
-                        Sign out
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-border/80 bg-background/65 p-3 shadow-sm">
-                      <p className="text-xs leading-5 text-muted-foreground">
-                        Guest chats are temporary. Sign in to save folders,
-                        chats, documents, and history.
-                      </p>
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <Button
-                          type="button"
-                          variant={authMode === "login" ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setAuthMode("login")}
-                        >
-                          <LogIn className="h-4 w-4" />
-                          Login
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={authMode === "signup" ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setAuthMode("signup")}
-                        >
-                          <Plus className="h-4 w-4" />
-                          Sign up
-                        </Button>
-                      </div>
-                      <form onSubmit={handleAuthSubmit} className="mt-3 space-y-2">
-                        {authMode === "signup" ? (
-                          <Input
-                            value={authName}
-                            onChange={(event) => setAuthName(event.target.value)}
-                            placeholder="Name"
-                            disabled={authLoading}
-                          />
-                        ) : null}
-                        <Input
-                          value={authEmail}
-                          onChange={(event) => setAuthEmail(event.target.value)}
-                          placeholder="Email"
-                          type="email"
-                          disabled={authLoading}
-                        />
-                        <Input
-                          value={authPassword}
-                          onChange={(event) => setAuthPassword(event.target.value)}
-                          placeholder="Password"
-                          type="password"
-                          disabled={authLoading}
-                        />
-                        {authMode === "signup" ? (
-                          <Input
-                            value={authConfirmPassword}
-                            onChange={(event) =>
-                              setAuthConfirmPassword(event.target.value)
-                            }
-                            placeholder="Confirm password"
-                            type="password"
-                            disabled={authLoading}
-                          />
-                        ) : null}
-                        <Button
-                          type="submit"
-                          className="w-full"
-                          disabled={authLoading}
-                        >
-                          {authLoading ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : authMode === "login" ? (
-                            <LogIn className="h-4 w-4" />
-                          ) : (
-                            <Plus className="h-4 w-4" />
-                          )}
-                          {authMode === "login" ? "Login" : "Create account"}
-                        </Button>
-                      </form>
-                      {authMessage ? (
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          {authMessage}
-                        </p>
-                      ) : null}
-                    </div>
-                  )}
-                </section>
-
-                {isAuthenticated ? (
-                  <>
-                    <Separator className="my-5" />
-                    <section className="animate-panel-in space-y-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <h2 className="text-sm font-semibold">Folders</h2>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => void handleCreateFolder()}
-                        >
-                          <FolderPlus className="h-4 w-4" />
-                          New
-                        </Button>
-                      </div>
-                      <div className="space-y-2">
-                        {loadingWorkspace ? (
-                          <DocumentState
-                            icon={Loader2}
-                            text="Loading workspace"
-                            spin
-                          />
-                        ) : (
-                          folders.map((folder) => (
-                            <div
-                              key={folder.id}
-                              className={cn(
-                                "rounded-2xl border border-border/75 bg-background/60 p-2 shadow-sm transition-colors",
-                                folder.id === activeFolderId && "bg-secondary",
-                              )}
-                            >
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="min-w-0 flex-1 justify-start px-2"
-                                  onClick={() => setActiveFolderId(folder.id)}
-                                >
-                                  <Folder className="h-4 w-4 shrink-0" />
-                                  <span className="truncate">{folder.name}</span>
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  title={`Rename ${folder.name}`}
-                                  onClick={() => void handleRenameFolder(folder)}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  title={`Delete ${folder.name}`}
-                                  onClick={() => void handleDeleteFolder(folder)}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between gap-2 pt-2">
-                        <div>
-                          <h2 className="text-sm font-semibold">Chats</h2>
-                          <p className="text-xs text-muted-foreground">
-                            {activeFolder?.name ?? "No folder selected"}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={!activeFolderId}
-                          onClick={() => void handleCreateChat()}
-                        >
-                          <Plus className="h-4 w-4" />
-                          New
-                        </Button>
-                      </div>
-
-                      <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
-                        {visibleChats.length === 0 ? (
-                          <DocumentState icon={MessageSquare} text="No chats yet" />
-                        ) : (
-                          visibleChats.map((chat) => (
-                            <div
-                              key={chat.id}
-                              className={cn(
-                                "rounded-2xl border border-border/75 bg-background/60 p-2 shadow-sm transition-colors",
-                                chat.id === activeChatId && "bg-secondary",
-                              )}
-                            >
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="min-w-0 flex-1 justify-start px-2"
-                                  onClick={() => handleOpenChat(chat)}
-                                >
-                                  <MessageSquare className="h-4 w-4 shrink-0" />
-                                  <span className="truncate">{chat.title}</span>
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  title={`Rename ${chat.title}`}
-                                  onClick={() => void handleRenameChat(chat)}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  title={`Delete ${chat.title}`}
-                                  onClick={() => void handleDeleteChat(chat)}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </section>
-                  </>
-                ) : null}
-
-                <Separator className="my-5" />
-
                 <form onSubmit={handleUpload} className="animate-panel-in space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-sm font-semibold">Documents</h2>
-                    <Badge variant="secondary">
-                      {readyDocuments.length} ready
-                    </Badge>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <h2 className="text-sm font-semibold">Documents</h2>
+                      <Badge variant="secondary">
+                        {readyDocuments.length} ready
+                      </Badge>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Collapse document menu"
+                      aria-expanded
+                      title="Collapse document menu"
+                      onClick={() => setIsSidebarCollapsed(true)}
+                    >
+                      <PanelLeftClose className="h-4 w-4" />
+                    </Button>
                   </div>
 
                   <Tabs
@@ -1510,6 +1334,95 @@ export function RagWorkspace() {
                     )}
                   </div>
                 </ScrollArea>
+
+                <Separator className="my-5" />
+
+                <section className="animate-panel-in min-h-0 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <h2 className="text-sm font-semibold">Chats</h2>
+                      <p className="text-xs text-muted-foreground">
+                        {isAuthenticated
+                          ? (activeFolder?.name ?? "No folder selected")
+                          : "Temporary guest chat"}
+                      </p>
+                    </div>
+                    {isAuthenticated ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={!activeFolderId}
+                        onClick={() => void handleCreateChat()}
+                      >
+                        <Plus className="h-4 w-4" />
+                        New
+                      </Button>
+                    ) : null}
+                  </div>
+
+                  {isAuthenticated ? (
+                    <ScrollArea className="max-h-48 pr-2">
+                      <div className="space-y-2">
+                        {loadingWorkspace ? (
+                          <DocumentState
+                            icon={Loader2}
+                            text="Loading chats"
+                            spin
+                          />
+                        ) : visibleChats.length === 0 ? (
+                          <DocumentState icon={MessageSquare} text="No chats yet" />
+                        ) : (
+                          visibleChats.map((chat) => (
+                            <div
+                              key={chat.id}
+                              className={cn(
+                                "rounded-2xl border border-border/75 bg-background/60 p-2 shadow-sm transition-colors",
+                                chat.id === activeChatId && "bg-secondary",
+                              )}
+                            >
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="min-w-0 flex-1 justify-start px-2"
+                                  onClick={() => handleOpenChat(chat)}
+                                >
+                                  <MessageSquare className="h-4 w-4 shrink-0" />
+                                  <span className="truncate">{chat.title}</span>
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  title={`Rename ${chat.title}`}
+                                  onClick={() => void handleRenameChat(chat)}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  title={`Delete ${chat.title}`}
+                                  onClick={() => void handleDeleteChat(chat)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </ScrollArea>
+                  ) : (
+                    <div className="rounded-2xl border border-border/80 bg-background/65 p-3 text-xs leading-5 text-muted-foreground shadow-sm">
+                      Guest chats stay temporary. Sign in from the top-right
+                      account button to save chats and history.
+                    </div>
+                  )}
+                </section>
               </>
             )}
           </div>
@@ -1727,6 +1640,7 @@ export function RagWorkspace() {
             </div>
           </div>
         </section>
+        </div>
       </div>
     </main>
   );
@@ -1818,6 +1732,13 @@ function CopyMessageButton({
       {copied ? LOCALIZED_CHAT_MESSAGES[language].copied : null}
     </Button>
   );
+}
+
+function getAccountLabel(profile: ProfileItem | null, user: AuthUser | null) {
+  const name = profile?.full_name.trim();
+  if (name) return name;
+  if (user?.email) return user.email;
+  return "Account";
 }
 
 async function readPayload<T = unknown>(response: Response): Promise<T> {

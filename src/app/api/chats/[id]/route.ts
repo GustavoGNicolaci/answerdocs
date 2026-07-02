@@ -3,7 +3,7 @@ import { requireAuthenticatedUser } from "@/lib/auth";
 import { toResponseError } from "@/lib/errors";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
-  ensureWorkspace,
+  ensureFolderHasChat,
   requireOwnedChat,
   sanitizeWorkspaceName,
 } from "@/lib/workspace";
@@ -50,7 +50,7 @@ export async function DELETE(_request: Request, context: ChatContext) {
     const { id } = await context.params;
     const user = await requireAuthenticatedUser();
     const supabase = getSupabaseAdmin();
-    await requireOwnedChat(supabase, user.id, id);
+    const chat = await requireOwnedChat(supabase, user.id, id);
 
     const { error } = await supabase
       .from("chats")
@@ -60,7 +60,7 @@ export async function DELETE(_request: Request, context: ChatContext) {
 
     if (error) throw error;
 
-    await ensureWorkspace(supabase, user.id);
+    await ensureFolderHasChat(supabase, user.id, chat.folder_id);
     return Response.json({ ok: true });
   } catch (error) {
     return toResponseError(error);

@@ -3,6 +3,7 @@ import { requireAuthenticatedUser } from "@/lib/auth";
 import { toResponseError } from "@/lib/errors";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import {
+  ensureFolderHasChat,
   ensureWorkspace,
   listFolders,
   sanitizeWorkspaceName,
@@ -30,7 +31,8 @@ export async function POST(request: Request) {
   try {
     const user = await requireAuthenticatedUser();
     const body = folderSchema.parse(await request.json());
-    const { data, error } = await getSupabaseAdmin()
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
       .from("folders")
       .insert({
         user_id: user.id,
@@ -41,7 +43,9 @@ export async function POST(request: Request) {
 
     if (error) throw error;
 
-    return Response.json({ folder: data }, { status: 201 });
+    const chat = await ensureFolderHasChat(supabase, user.id, data.id);
+
+    return Response.json({ folder: data, chat }, { status: 201 });
   } catch (error) {
     return toResponseError(error);
   }
