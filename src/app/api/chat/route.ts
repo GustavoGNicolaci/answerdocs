@@ -1,15 +1,15 @@
 import { z } from "zod";
 import {
+  LOCALIZED_CHAT_MESSAGES,
   MATCH_COUNT,
   MATCH_THRESHOLD,
-  NO_CONTEXT_ANSWER,
-  NO_SELECTED_DOCUMENT_ANSWER,
-  SELECTED_DOCUMENTS_FALLBACK_ANSWER,
 } from "@/lib/constants";
 import { toResponseError } from "@/lib/errors";
 import { embedText, generateGroundedAnswer } from "@/lib/gemini";
+import { detectResponseLanguage } from "@/lib/language";
 import {
   buildAnswerPrompt,
+  buildRetrievalQuery,
   createCitations,
   hasInvalidCitationIndexes,
   normalizeAnswer,
@@ -18,21 +18,41 @@ import {
 import { sessionIdSchema } from "@/lib/session";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { getSystemHelpAnswer } from "@/lib/system-help";
-import type { MatchDocumentChunk } from "@/lib/types";
+import type { ConversationHistoryItem, MatchDocumentChunk } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+const MAX_HISTORY_TURNS = 6;
+const MAX_HISTORY_QUESTION_CHARACTERS = 500;
+const MAX_HISTORY_ANSWER_CHARACTERS = 1_000;
 
 const chatRequestSchema = z.object({
   sessionId: sessionIdSchema,
   question: z.string().trim().min(1).max(2_000),
   documentIds: z.array(z.uuid()).max(50).optional(),
+  history: z
+    .array(
+      z.object({
+        question: z.string().max(4_000),
+        answer: z.string().max(8_000),
+      }),
+    )
+    .max(10)
+    .optional(),
 });
 
 export async function POST(request: Request) {
   try {
     const body = chatRequestSchema.parse(await request.json());
-    const systemHelpAnswer = getSystemHelpAnswer(body.question);
+    const responseLanguage = detectResponseLanguage(body.question);
+    const messages = LOCALIZED_CHAT_MESSAGES[responseLanguage];
+    const fallbackAnswer = messages.selectedDocumentsFallback;
+    const history = sanitizeConversationHistory(body.history);
+    const systemHelpAnswer = getSystemHelpAnswer(
+      body.question,
+      responseLanguage,
+    );
 
     if (systemHelpAnswer) {
       return Response.json({ answer: systemHelpAnswer, citations: [] });
@@ -46,12 +66,12 @@ export async function POST(request: Request) {
     );
 
     if (!hasAnyReadyContext) {
-      return Response.json({ answer: NO_CONTEXT_ANSWER, citations: [] });
+      return Response.json({ answer: messages.noContext, citations: [] });
     }
 
     if (selectedDocumentIds.length === 0) {
       return Response.json({
-        answer: NO_SELECTED_DOCUMENT_ANSWER,
+        answer: messages.noSelectedDocument,
         citations: [],
       });
     }
@@ -64,13 +84,13 @@ export async function POST(request: Request) {
 
     if (!hasSelectedContext) {
       return Response.json({
-        answer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+        answer: fallbackAnswer,
         citations: [],
       });
     }
 
     const queryEmbedding = await embedText({
-      text: body.question,
+      text: buildRetrievalQuery(body.question, history),
       taskType: "RETRIEVAL_QUERY",
     });
 
@@ -88,7 +108,7 @@ export async function POST(request: Request) {
 
     if (matches.length === 0) {
       return Response.json({
-        answer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+        answer: fallbackAnswer,
         citations: [],
       });
     }
@@ -98,21 +118,27 @@ export async function POST(request: Request) {
         buildAnswerPrompt(
           body.question,
           matches,
-          SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+          {
+            fallbackAnswer,
+            responseLanguage,
+            history,
+          },
         ),
-        SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+        {
+          fallbackAnswer,
+          responseLanguage,
+        },
       ),
-      SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+      fallbackAnswer,
     );
     const citations =
-      answer === SELECTED_DOCUMENTS_FALLBACK_ANSWER ||
-      hasInvalidCitationIndexes(answer, matches.length)
+      answer === fallbackAnswer || hasInvalidCitationIndexes(answer, matches.length)
         ? []
         : createCitations(matches, answer);
 
-    if (answer !== SELECTED_DOCUMENTS_FALLBACK_ANSWER && citations.length === 0) {
+    if (answer !== fallbackAnswer && citations.length === 0) {
       return Response.json({
-        answer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+        answer: fallbackAnswer,
         citations: [],
       });
     }
@@ -121,7 +147,7 @@ export async function POST(request: Request) {
       answer:
         citations.length > 0
           ? removeHiddenCitationMarkers(answer, citations)
-          : SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+          : fallbackAnswer,
       citations,
     });
   } catch (error) {
@@ -148,4 +174,25 @@ async function hasReadyDocumentContext(
   if (error) throw error;
 
   return (count ?? 0) > 0;
+}
+
+function sanitizeConversationHistory(
+  history: ConversationHistoryItem[] | undefined,
+) {
+  if (!history) return [];
+
+  return history
+    .map((turn) => ({
+      question: truncateText(turn.question, MAX_HISTORY_QUESTION_CHARACTERS),
+      answer: truncateText(turn.answer, MAX_HISTORY_ANSWER_CHARACTERS),
+    }))
+    .filter((turn) => turn.question.length > 0 && turn.answer.length > 0)
+    .slice(-MAX_HISTORY_TURNS);
+}
+
+function truncateText(value: string, maxCharacters: number) {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxCharacters) return trimmed;
+
+  return `${trimmed.slice(0, maxCharacters - 3).trimEnd()}...`;
 }

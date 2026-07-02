@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  LOCALIZED_CHAT_MESSAGES,
   NO_CONTEXT_ANSWER,
   NO_SELECTED_DOCUMENT_ANSWER,
   SELECTED_DOCUMENTS_FALLBACK_ANSWER,
@@ -92,6 +93,27 @@ describe("chat route", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
+  it("localizes the no-context answer in Portuguese", async () => {
+    const { rpc } = mockSupabase({ readyDocumentCounts: [0] });
+
+    const response = await POST(
+      jsonRequest({
+        sessionId,
+        question: "Qual é a janela de reembolso?",
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      answer: LOCALIZED_CHAT_MESSAGES.pt.noContext,
+      citations: [],
+    });
+    expect(embedText).not.toHaveBeenCalled();
+    expect(generateGroundedAnswer).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("answers system usage questions without Gemini or Supabase", async () => {
     const response = await POST(
       jsonRequest({
@@ -105,6 +127,22 @@ describe("chat route", () => {
     expect(payload.answer).toContain("uploading a PDF or .txt file");
     expect(payload.answer).toContain("dragging a PDF");
     expect(payload.answer).toContain("pasting a PDF");
+    expect(payload.citations).toEqual([]);
+    expect(getSupabaseAdmin).not.toHaveBeenCalled();
+    expect(embedText).not.toHaveBeenCalled();
+  });
+
+  it("answers system usage questions in Portuguese without Gemini or Supabase", async () => {
+    const response = await POST(
+      jsonRequest({
+        sessionId,
+        question: "Como posso enviar um PDF?",
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.answer).toContain("Você pode adicionar contexto");
     expect(payload.citations).toEqual([]);
     expect(getSupabaseAdmin).not.toHaveBeenCalled();
     expect(embedText).not.toHaveBeenCalled();
@@ -128,6 +166,27 @@ describe("chat route", () => {
     });
     expect(embedText).not.toHaveBeenCalled();
     expect(generateGroundedAnswer).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("localizes the no-selection answer in Portuguese", async () => {
+    const { rpc } = mockSupabase({ readyDocumentCounts: [1] });
+
+    const response = await POST(
+      jsonRequest({
+        sessionId,
+        question: "O que o documento diz?",
+        documentIds: [],
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      answer: LOCALIZED_CHAT_MESSAGES.pt.noSelectedDocument,
+      citations: [],
+    });
+    expect(embedText).not.toHaveBeenCalled();
     expect(rpc).not.toHaveBeenCalled();
   });
 
@@ -201,6 +260,53 @@ describe("chat route", () => {
       "match_document_chunks",
       expect.objectContaining({
         filter_session_id: sessionId,
+        filter_document_ids: [documentId],
+      }),
+    );
+  });
+
+  it("passes recent conversation history to retrieval and answer prompts", async () => {
+    const { rpc } = mockSupabase({
+      readyDocumentCounts: [1, 1],
+      rpcData: matches,
+    });
+    vi.mocked(embedText).mockResolvedValue(new Array(768).fill(0));
+    vi.mocked(generateGroundedAnswer).mockResolvedValue(
+      "Policy.pdf says refunds are available within 30 days [1].",
+    );
+
+    const response = await POST(
+      jsonRequest({
+        sessionId,
+        question: "Explain that in more detail.",
+        documentIds: [documentId],
+        history: [
+          {
+            question: "What is the refund window?",
+            answer: "Policy.pdf says refunds are available within 30 days [1].",
+          },
+        ],
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.citations).toHaveLength(1);
+    expect(embedText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining("Turn 1 user: What is the refund window?"),
+      }),
+    );
+    expect(generateGroundedAnswer).toHaveBeenCalledWith(
+      expect.stringContaining("Conversation history:"),
+      expect.objectContaining({
+        fallbackAnswer: SELECTED_DOCUMENTS_FALLBACK_ANSWER,
+        responseLanguage: "en",
+      }),
+    );
+    expect(rpc).toHaveBeenCalledWith(
+      "match_document_chunks",
+      expect.objectContaining({
         filter_document_ids: [documentId],
       }),
     );

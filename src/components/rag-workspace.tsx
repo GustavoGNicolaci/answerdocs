@@ -2,8 +2,10 @@
 
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
   ChevronDown,
+  Copy,
   Database,
   FileText,
   Loader2,
@@ -37,9 +39,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { LOCALIZED_CHAT_MESSAGES } from "@/lib/constants";
+import { detectResponseLanguage } from "@/lib/language";
+import type { ResponseLanguage } from "@/lib/types";
 import { cn, formatBytes } from "@/lib/utils";
 
 const SESSION_STORAGE_KEY = "answerdocs.sessionId";
+const CHAT_HISTORY_TURN_LIMIT = 6;
+const COPY_FEEDBACK_TIMEOUT_MS = 1_600;
 const PASTED_CONTEXT_MIN_CHARACTERS = 350;
 const PASTED_CONTEXT_MIN_LINES = 3;
 const PASTED_PDF_ERROR =
@@ -70,6 +77,7 @@ type ChatTurn = {
   question: string;
   answer: string;
   citations: CitationItem[];
+  language: ResponseLanguage;
 };
 
 type UploadMode = "file" | "text";
@@ -77,6 +85,7 @@ type UploadMode = "file" | "text";
 export function RagWorkspace() {
   const chatFormRef = useRef<HTMLFormElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const copyFeedbackTimerRef = useRef<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -94,6 +103,7 @@ export function RagWorkspace() {
   const [asking, setAsking] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [draggingChatFile, setDraggingChatFile] = useState(false);
+  const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -159,6 +169,14 @@ export function RagWorkspace() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end" });
   }, [asking, turns.length]);
+
+  useEffect(() => {
+    return () => {
+      if (copyFeedbackTimerRef.current) {
+        window.clearTimeout(copyFeedbackTimerRef.current);
+      }
+    };
+  }, []);
 
   async function indexDocument(input: {
     file?: File;
@@ -249,6 +267,7 @@ export function RagWorkspace() {
     const nextQuestion = question.trim();
     if (!nextQuestion || asking || uploadingChatAttachment || !sessionId) return;
 
+    const responseLanguage = detectResponseLanguage(nextQuestion);
     setAsking(true);
     setError(null);
     setNotice(null);
@@ -261,6 +280,10 @@ export function RagWorkspace() {
           sessionId,
           question: nextQuestion,
           documentIds: selectedDocumentIds,
+          history: turns.slice(-CHAT_HISTORY_TURN_LIMIT).map((turn) => ({
+            question: turn.question,
+            answer: turn.answer,
+          })),
         }),
       });
       const payload = await readPayload<{
@@ -275,6 +298,7 @@ export function RagWorkspace() {
           question: nextQuestion,
           answer: payload.answer,
           citations: payload.citations,
+          language: responseLanguage,
         },
       ]);
       setQuestion("");
@@ -282,6 +306,25 @@ export function RagWorkspace() {
       setError(getClientError(requestError));
     } finally {
       setAsking(false);
+    }
+  }
+
+  async function handleCopyMessage(messageKey: string, text: string) {
+    try {
+      await copyTextToClipboard(text);
+      setCopiedMessageKey(messageKey);
+
+      if (copyFeedbackTimerRef.current) {
+        window.clearTimeout(copyFeedbackTimerRef.current);
+      }
+
+      copyFeedbackTimerRef.current = window.setTimeout(() => {
+        setCopiedMessageKey((current) =>
+          current === messageKey ? null : current,
+        );
+      }, COPY_FEEDBACK_TIMEOUT_MS);
+    } catch {
+      setError("Could not copy message.");
     }
   }
 
@@ -783,24 +826,44 @@ export function RagWorkspace() {
                         key={turn.id}
                         className="animate-message-in flex flex-col gap-3"
                       >
-                        <div className="ml-auto flex max-w-[86%] items-start gap-2 sm:max-w-[76%]">
+                        <div className="group/message ml-auto flex max-w-[86%] flex-col items-end gap-1 sm:max-w-[76%]">
                           <div className="min-w-0 rounded-3xl rounded-br-lg bg-primary px-4 py-3 text-primary-foreground shadow-sm">
-                            <p className="whitespace-pre-wrap text-sm leading-6">
+                            <p className="select-text whitespace-pre-wrap text-sm leading-6">
                               {turn.question}
                             </p>
                           </div>
+                          <CopyMessageButton
+                            messageKey={`${turn.id}:question`}
+                            text={turn.question}
+                            language={turn.language}
+                            copiedMessageKey={copiedMessageKey}
+                            onCopy={(messageKey, text) =>
+                              void handleCopyMessage(messageKey, text)
+                            }
+                          />
                         </div>
 
-                        <div className="mr-auto max-w-[94%] rounded-3xl rounded-bl-lg border border-border/80 bg-card/85 p-4 text-card-foreground shadow-[var(--shadow-subtle)] sm:max-w-[86%]">
+                        <div className="group/message mr-auto max-w-[94%] rounded-3xl rounded-bl-lg border border-border/80 bg-card/85 p-4 text-card-foreground shadow-[var(--shadow-subtle)] sm:max-w-[86%]">
                           <div className="flex items-start gap-3">
                             <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-secondary text-accent-foreground shadow-sm">
                               <Sparkles className="h-4 w-4" />
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="whitespace-pre-wrap text-sm leading-6">
+                              <p className="select-text whitespace-pre-wrap text-sm leading-6">
                                 {turn.answer}
                               </p>
                             </div>
+                          </div>
+                          <div className="mt-3 flex justify-end">
+                            <CopyMessageButton
+                              messageKey={`${turn.id}:answer`}
+                              text={turn.answer}
+                              language={turn.language}
+                              copiedMessageKey={copiedMessageKey}
+                              onCopy={(messageKey, text) =>
+                                void handleCopyMessage(messageKey, text)
+                              }
+                            />
                           </div>
 
                           {turn.citations.length > 0 ? (
@@ -973,6 +1036,40 @@ function DocumentState({
   );
 }
 
+function CopyMessageButton({
+  messageKey,
+  text,
+  language,
+  copiedMessageKey,
+  onCopy,
+}: {
+  messageKey: string;
+  text: string;
+  language: ResponseLanguage;
+  copiedMessageKey: string | null;
+  onCopy: (messageKey: string, text: string) => void;
+}) {
+  const copied = copiedMessageKey === messageKey;
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className={cn(
+        "h-7 px-2 text-[11px] text-muted-foreground opacity-80 shadow-none transition-opacity hover:text-foreground sm:opacity-0 sm:group-hover/message:opacity-100 sm:focus-visible:opacity-100",
+        copied && "opacity-100",
+      )}
+      aria-label={copied ? LOCALIZED_CHAT_MESSAGES[language].copied : "Copy message"}
+      title={copied ? LOCALIZED_CHAT_MESSAGES[language].copied : "Copy message"}
+      onClick={() => onCopy(messageKey, text)}
+    >
+      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      {copied ? LOCALIZED_CHAT_MESSAGES[language].copied : null}
+    </Button>
+  );
+}
+
 async function readPayload<T = unknown>(response: Response): Promise<T> {
   const payload = (await response.json()) as T & { error?: string };
 
@@ -1034,4 +1131,27 @@ function shouldTreatPasteAsContext(value: string) {
 
 function hasDraggedFiles(event: DragEvent<HTMLElement>) {
   return [...event.dataTransfer.types].includes("Files");
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-9999px";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  const copied = document.execCommand("copy");
+  textarea.remove();
+
+  if (!copied) {
+    throw new Error("Copy failed.");
+  }
 }

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   FALLBACK_ANSWER,
+  LOCALIZED_CHAT_MESSAGES,
   SELECTED_DOCUMENTS_FALLBACK_ANSWER,
 } from "@/lib/constants";
 import {
   buildAnswerPrompt,
+  buildRetrievalQuery,
   createCitations,
   hasInvalidCitationIndexes,
   normalizeAnswer,
@@ -69,6 +71,26 @@ describe("rag utilities", () => {
     expect(prompt).not.toContain("0.87");
   });
 
+  it("builds a Portuguese prompt with conversation history", () => {
+    const prompt = buildAnswerPrompt("Explique melhor isso.", matches, {
+      fallbackAnswer: LOCALIZED_CHAT_MESSAGES.pt.selectedDocumentsFallback,
+      responseLanguage: "pt",
+      history: [
+        {
+          question: "Qual é a janela de reembolso?",
+          answer: "O arquivo Policy.pdf diz que reembolsos estão disponíveis em 30 dias [1].",
+        },
+      ],
+    });
+
+    expect(prompt).toContain("Write a concise answer in Portuguese");
+    expect(prompt).toContain("Conversation history:");
+    expect(prompt).toContain("User: Qual é a janela de reembolso?");
+    expect(prompt).toContain("Selected document context:");
+    expect(prompt).toContain(LOCALIZED_CHAT_MESSAGES.pt.selectedDocumentsFallback);
+    expect(prompt).not.toContain("Similarity:");
+  });
+
   it("supports a selected-document fallback in the grounded prompt", () => {
     const prompt = buildAnswerPrompt(
       "What is the refund window?",
@@ -78,6 +100,19 @@ describe("rag utilities", () => {
 
     expect(prompt).toContain(SELECTED_DOCUMENTS_FALLBACK_ANSWER);
     expect(prompt).not.toContain(FALLBACK_ANSWER);
+  });
+
+  it("builds a retrieval query with recent conversation turns", () => {
+    const query = buildRetrievalQuery("Explain that in more detail.", [
+      {
+        question: "What is the refund window?",
+        answer: "Policy.pdf says refunds are available within 30 days [1].",
+      },
+    ]);
+
+    expect(query).toContain("Recent conversation:");
+    expect(query).toContain("Turn 1 user: What is the refund window?");
+    expect(query).toContain("Current question: Explain that in more detail.");
   });
 
   it("maps only cited chunks to public citations", () => {

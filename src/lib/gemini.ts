@@ -7,6 +7,8 @@ import {
   MAX_PUBLIC_CITATIONS,
 } from "@/lib/constants";
 import { configurationError } from "@/lib/errors";
+import { getResponseLanguageName } from "@/lib/language";
+import type { ResponseLanguage } from "@/lib/types";
 
 let geminiClient: GoogleGenAI | null = null;
 
@@ -16,6 +18,11 @@ type EmbedRequest = {
   text: string;
   title?: string;
   taskType: EmbeddingTask;
+};
+
+type GenerateAnswerOptions = {
+  fallbackAnswer?: string;
+  responseLanguage?: ResponseLanguage;
 };
 
 export function getGeminiClient() {
@@ -71,8 +78,16 @@ export async function embedTexts(requests: EmbedRequest[]) {
 
 export async function generateGroundedAnswer(
   prompt: string,
-  fallbackAnswer = FALLBACK_ANSWER,
+  options: GenerateAnswerOptions | string = {},
 ) {
+  const fallbackAnswer =
+    typeof options === "string"
+      ? options
+      : options.fallbackAnswer ?? FALLBACK_ANSWER;
+  const responseLanguage =
+    typeof options === "string" ? "en" : options.responseLanguage ?? "en";
+  const languageName = getResponseLanguageName(responseLanguage);
+
   const response = await getGeminiClient().models.generateContent({
     model: GEMINI_CHAT_MODEL,
     contents: prompt,
@@ -81,7 +96,7 @@ export async function generateGroundedAnswer(
       responseMimeType: "text/plain",
       temperature: 0.2,
       systemInstruction:
-        `You are AnswerDocs, a careful document question-answering assistant. Answer in English. Use only the provided context. Mention source file names when using facts, and cite only the necessary supporting snippets with bracketed citation numbers such as [1] and [2]. Never use more than ${MAX_PUBLIC_CITATIONS} citations. Never mention similarity, precision, confidence, ranking, scores, or percentages. If the context is insufficient, say exactly: ${fallbackAnswer}`,
+        `You are AnswerDocs, a careful document question-answering assistant. Answer in ${languageName}, matching the current user message. Use only the provided selected document context for document facts. Mention source file names when using facts, and cite only the necessary supporting snippets with bracketed citation numbers such as [1] and [2]. Never use more than ${MAX_PUBLIC_CITATIONS} citations. Never mention similarity, precision, confidence, ranking, scores, or percentages. If the context is insufficient, say exactly: ${fallbackAnswer}`,
     },
   });
 

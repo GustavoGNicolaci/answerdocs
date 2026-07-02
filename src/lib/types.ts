@@ -50,3 +50,10 @@ export type Citation = {
   chunkIndex: number;
   snippet: string;
 };
+
+export type ResponseLanguage = "pt" | "en";
+
+export type ConversationHistoryItem = {
+  question: string;
+  answer: string;
+};
