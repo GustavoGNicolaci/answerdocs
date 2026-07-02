@@ -5,10 +5,12 @@ import {
 } from "@/lib/constants";
 import { badRequest } from "@/lib/errors";
 import { extractPdfPages } from "@/lib/pdf";
+import { parseSessionId, sessionIdSchema } from "@/lib/session";
 import { normalizeText } from "@/lib/text";
 import type { DocumentInput } from "@/lib/types";
 
 const jsonDocumentSchema = z.object({
+  sessionId: sessionIdSchema,
   title: z.string().trim().max(120).optional(),
   text: z.string().trim().min(1).max(MAX_TEXT_CHARACTERS),
 });
@@ -18,26 +20,31 @@ export async function parseDocumentInput(request: Request): Promise<DocumentInpu
 
   if (contentType.includes("application/json")) {
     const body = jsonDocumentSchema.parse(await request.json());
-    return createTextInput(body.text, body.title);
+    return createTextInput(body.text, body.sessionId, body.title);
   }
 
   const formData = await request.formData();
+  const sessionId = parseSessionId(stringValue(formData.get("sessionId")));
   const title = stringValue(formData.get("title"));
   const pastedText = stringValue(formData.get("text"));
   const file = formData.get("file");
 
   if (file instanceof File && file.size > 0) {
-    return parseFileInput(file, title);
+    return parseFileInput(file, sessionId, title);
   }
 
   if (pastedText) {
-    return createTextInput(pastedText, title);
+    return createTextInput(pastedText, sessionId, title);
   }
 
   throw badRequest("Upload a PDF, upload a text file, or paste text to index.");
 }
 
-async function parseFileInput(file: File, title?: string): Promise<DocumentInput> {
+async function parseFileInput(
+  file: File,
+  sessionId: string,
+  title?: string,
+): Promise<DocumentInput> {
   if (file.size > MAX_FILE_BYTES) {
     throw badRequest("Files must be 10 MB or smaller.");
   }
@@ -51,6 +58,7 @@ async function parseFileInput(file: File, title?: string): Promise<DocumentInput
     const pages = await extractPdfPages(buffer);
 
     return {
+      sessionId,
       title: documentTitle,
       sourceType: "pdf",
       pages,
@@ -64,11 +72,16 @@ async function parseFileInput(file: File, title?: string): Promise<DocumentInput
 
   if (file.type === "text/plain" || lowerName.endsWith(".txt")) {
     const text = await file.text();
-    return createTextInput(text, documentTitle, {
-      originalName: filename,
-      size: file.size,
-      mimeType: file.type || "text/plain",
-    });
+    return createTextInput(
+      text,
+      sessionId,
+      documentTitle,
+      {
+        originalName: filename,
+        size: file.size,
+        mimeType: file.type || "text/plain",
+      },
+    );
   }
 
   throw badRequest("Only PDF and .txt files are supported.");
@@ -76,6 +89,7 @@ async function parseFileInput(file: File, title?: string): Promise<DocumentInput
 
 function createTextInput(
   value: string,
+  sessionId: string,
   title = "Pasted text",
   metadata: Record<string, unknown> = {},
 ): DocumentInput {
@@ -90,6 +104,7 @@ function createTextInput(
   }
 
   return {
+    sessionId,
     title: sanitizeTitle(title),
     sourceType: "text",
     pages: [{ pageNumber: null, text }],

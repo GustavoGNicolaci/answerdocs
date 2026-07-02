@@ -1,6 +1,6 @@
 # AnswerDocs
 
-AnswerDocs is a minimal RAG chatbot. It accepts PDFs, text files, or pasted text, chunks and embeds the content with Gemini, stores vectors in Supabase pgvector, and returns grounded answers with cited snippets.
+AnswerDocs is a minimal RAG chatbot. It accepts PDFs, text files, or pasted chat context, chunks and embeds the content with Gemini, stores vectors in Supabase pgvector, and returns grounded answers with cited snippets.
 
 ## Stack
 
@@ -27,12 +27,13 @@ Use non-sensitive demo documents when testing on Gemini's free tier.
 
 ## Database
 
-Apply the migration in `supabase/migrations/20260701231140_initial_rag_schema.sql` to your Supabase project. It creates:
+Apply the migrations in `supabase/migrations` to your Supabase project. They create:
 
 - `documents`
 - `document_chunks`
 - `match_document_chunks(...)`
 - HNSW cosine vector index
+- Session-scoped document filtering
 - RLS with service-role-only access
 
 ## Development
@@ -44,12 +45,17 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+Each browser tab creates its own chat session with `sessionStorage`. Documents from another tab or an older session are not used unless they share the same session id.
+
 ## API
 
 Upload a file:
 
 ```bash
+SESSION_ID="11111111-1111-4111-8111-111111111111"
+
 curl -X POST http://localhost:3000/api/documents \
+  -F "sessionId=$SESSION_ID" \
   -F "title=Sample policy" \
   -F "file=@sample.pdf"
 ```
@@ -59,7 +65,7 @@ Upload pasted text:
 ```bash
 curl -X POST http://localhost:3000/api/documents \
   -H "Content-Type: application/json" \
-  -d "{\"title\":\"Notes\",\"text\":\"Refunds are available within 30 days.\"}"
+  -d "{\"sessionId\":\"$SESSION_ID\",\"title\":\"Notes\",\"text\":\"Refunds are available within 30 days.\"}"
 ```
 
 Ask a question:
@@ -67,8 +73,10 @@ Ask a question:
 ```bash
 curl -X POST http://localhost:3000/api/chat \
   -H "Content-Type: application/json" \
-  -d "{\"question\":\"What is the refund window?\"}"
+  -d "{\"sessionId\":\"$SESSION_ID\",\"question\":\"What is the refund window?\"}"
 ```
+
+In the UI, PDFs can also be attached from the chat composer by dragging a PDF into the chat area or using the PDF attachment button. Large pasted text in the chat composer is indexed as chat context automatically.
 
 ## Verification
 

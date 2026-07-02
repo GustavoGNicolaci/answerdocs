@@ -7,6 +7,7 @@ import {
   FileText,
   Loader2,
   MessageSquare,
+  Paperclip,
   Quote,
   Search,
   Send,
@@ -14,7 +15,15 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  ClipboardEvent,
+  DragEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,7 +34,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { formatBytes, formatSimilarity } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
+
+const SESSION_STORAGE_KEY = "answerdocs.sessionId";
+const PASTED_CONTEXT_MIN_CHARACTERS = 600;
+const PASTED_CONTEXT_MIN_LINES = 4;
 
 type DocumentItem = {
   id: string;
@@ -43,7 +56,7 @@ type CitationItem = {
   documentId: string;
   documentTitle: string;
   pageNumber: number | null;
-  similarity: number;
+  chunkIndex: number;
   snippet: string;
 };
 
@@ -57,6 +70,9 @@ type ChatTurn = {
 type UploadMode = "file" | "text";
 
 export function RagWorkspace() {
+  const chatFileInputRef = useRef<HTMLInputElement>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [uploadMode, setUploadMode] = useState<UploadMode>("file");
@@ -67,8 +83,10 @@ export function RagWorkspace() {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadingChatAttachment, setUploadingChatAttachment] = useState(false);
   const [asking, setAsking] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [draggingChatFile, setDraggingChatFile] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,9 +95,12 @@ export function RagWorkspace() {
     [documents],
   );
 
-  async function loadDocuments() {
+  async function loadDocuments(currentSessionId: string) {
     try {
-      const response = await fetch("/api/documents", { cache: "no-store" });
+      const response = await fetch(
+        `/api/documents?sessionId=${encodeURIComponent(currentSessionId)}`,
+        { cache: "no-store" },
+      );
       const payload = await readPayload<{ documents: DocumentItem[] }>(response);
       setDocuments(payload.documents);
     } catch (requestError) {
@@ -91,11 +112,67 @@ export function RagWorkspace() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadDocuments();
+      let nextSessionId = crypto.randomUUID();
+
+      try {
+        const storedSessionId = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+        nextSessionId = storedSessionId || nextSessionId;
+
+        if (!storedSessionId) {
+          window.sessionStorage.setItem(SESSION_STORAGE_KEY, nextSessionId);
+        }
+      } catch {
+        // Private browsing or strict storage settings can block sessionStorage.
+      }
+
+      setSessionId(nextSessionId);
+      setSessionReady(true);
     }, 0);
 
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const timer = window.setTimeout(() => {
+      setSelectedDocumentIds([]);
+      void loadDocuments(sessionId);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [sessionId]);
+
+  async function indexDocument(input: {
+    file?: File;
+    text?: string;
+    title?: string;
+  }) {
+    if (!sessionId) {
+      throw new Error("The chat session is not ready yet.");
+    }
+
+    const formData = new FormData();
+    formData.append("sessionId", sessionId);
+    if (input.title?.trim()) formData.append("title", input.title.trim());
+    if (input.file) formData.append("file", input.file);
+    if (input.text?.trim()) formData.append("text", input.text.trim());
+
+    const response = await fetch("/api/documents", {
+      method: "POST",
+      body: formData,
+    });
+    const payload = await readPayload<{ document: DocumentItem }>(response);
+
+    setDocuments((current) => [payload.document, ...current]);
+    setSelectedDocumentIds((current) =>
+      current.includes(payload.document.id)
+        ? current
+        : [...current, payload.document.id],
+    );
+
+    return payload.document;
+  }
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -104,26 +181,16 @@ export function RagWorkspace() {
     setUploading(true);
 
     try {
-      const formData = new FormData();
-      if (title.trim()) formData.append("title", title.trim());
-
+      let uploadedDocument: DocumentItem;
       if (uploadMode === "file") {
         if (!file) throw new Error("Choose a PDF or .txt file.");
-        formData.append("file", file);
+        uploadedDocument = await indexDocument({ file, title });
       } else {
         if (!pastedText.trim()) throw new Error("Paste text before indexing.");
-        formData.append("text", pastedText);
+        uploadedDocument = await indexDocument({ text: pastedText, title });
       }
 
-      const response = await fetch("/api/documents", {
-        method: "POST",
-        body: formData,
-      });
-      const payload = await readPayload<{ document: DocumentItem }>(response);
-
-      setDocuments((current) => [payload.document, ...current]);
-      setSelectedDocumentIds((current) => [...current, payload.document.id]);
-      setNotice(`Indexed "${payload.document.title}".`);
+      setNotice(`Indexed "${uploadedDocument.title}".`);
       setFile(null);
       setTitle("");
       setPastedText("");
@@ -140,9 +207,11 @@ export function RagWorkspace() {
     setNotice(null);
 
     try {
-      const response = await fetch(`/api/documents/${documentId}`, {
-        method: "DELETE",
-      });
+      if (!sessionId) throw new Error("The chat session is not ready yet.");
+      const response = await fetch(
+        `/api/documents/${documentId}?sessionId=${encodeURIComponent(sessionId)}`,
+        { method: "DELETE" },
+      );
       await readPayload(response);
       setDocuments((current) =>
         current.filter((document) => document.id !== documentId),
@@ -168,10 +237,12 @@ export function RagWorkspace() {
     setNotice(null);
 
     try {
+      if (!sessionId) throw new Error("The chat session is not ready yet.");
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          sessionId,
           question: nextQuestion,
           documentIds:
             selectedDocumentIds.length > 0 ? selectedDocumentIds : undefined,
@@ -199,11 +270,131 @@ export function RagWorkspace() {
     }
   }
 
+  async function handleChatPdfFile(nextFile: File) {
+    setError(null);
+    setNotice(null);
+
+    if (!isPdfFile(nextFile)) {
+      setError("Attach a PDF file.");
+      return;
+    }
+
+    setUploadingChatAttachment(true);
+
+    try {
+      const uploadedDocument = await indexDocument({
+        file: nextFile,
+        title: nextFile.name,
+      });
+      setNotice(`Added "${uploadedDocument.title}" to this chat.`);
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    } finally {
+      setUploadingChatAttachment(false);
+    }
+  }
+
+  async function handlePastedChatContext(text: string) {
+    setError(null);
+    setNotice(null);
+    setUploadingChatAttachment(true);
+
+    try {
+      const uploadedDocument = await indexDocument({
+        text,
+        title: "Pasted chat context",
+      });
+      setNotice(`Added "${uploadedDocument.title}" to this chat.`);
+    } catch (requestError) {
+      setError(getClientError(requestError));
+    } finally {
+      setUploadingChatAttachment(false);
+    }
+  }
+
+  function handleQuestionPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const text = event.clipboardData.getData("text/plain");
+    if (!shouldTreatPasteAsContext(text) || uploadingChatAttachment) return;
+
+    event.preventDefault();
+    void handlePastedChatContext(text);
+  }
+
+  function handleChatDragEnter(event: DragEvent<HTMLElement>) {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    setDraggingChatFile(true);
+  }
+
+  function handleChatDragOver(event: DragEvent<HTMLElement>) {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    setDraggingChatFile(true);
+  }
+
+  function handleChatDragLeave(event: DragEvent<HTMLElement>) {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+      return;
+    }
+
+    setDraggingChatFile(false);
+  }
+
+  function handleChatDrop(event: DragEvent<HTMLElement>) {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    setDraggingChatFile(false);
+
+    const nextFile = [...event.dataTransfer.files].find(isPdfFile);
+    if (!nextFile) {
+      setError("Drop a PDF file.");
+      return;
+    }
+
+    void handleChatPdfFile(nextFile);
+  }
+
   function toggleDocument(documentId: string) {
     setSelectedDocumentIds((current) =>
       current.includes(documentId)
         ? current.filter((id) => id !== documentId)
         : [...current, documentId],
+    );
+  }
+
+  if (!sessionReady) {
+    return (
+      <main className="min-h-screen bg-background text-foreground">
+        <div className="mx-auto grid min-h-screen w-full max-w-7xl gap-0 lg:grid-cols-[380px_1fr]">
+          <aside className="border-b border-border bg-card/40 lg:border-b-0 lg:border-r">
+            <div className="flex h-full flex-col p-5">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                  <Sparkles className="h-5 w-5" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold tracking-tight">
+                    AnswerDocs
+                  </h1>
+                  <p className="text-sm text-muted-foreground">RAG workspace</p>
+                </div>
+              </div>
+              <Separator className="my-5" />
+              <div className="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Preparing chat session
+              </div>
+            </div>
+          </aside>
+          <section className="flex min-h-screen items-center justify-center p-5">
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              Preparing workspace
+            </div>
+          </section>
+        </div>
+      </main>
     );
   }
 
@@ -254,7 +445,7 @@ export function RagWorkspace() {
                     value={title}
                     onChange={(event) => setTitle(event.target.value)}
                     placeholder="Quarterly report"
-                    disabled={uploading}
+                    disabled={uploading || !sessionId}
                   />
                 </div>
 
@@ -265,13 +456,15 @@ export function RagWorkspace() {
                       id="document-file"
                       type="file"
                       accept="application/pdf,text/plain,.pdf,.txt"
-                      disabled={uploading}
+                      disabled={uploading || !sessionId}
                       onChange={(event) =>
                         setFile(event.target.files?.[0] ?? null)
                       }
                     />
                     <p className="text-xs text-muted-foreground">
-                      {file ? `${file.name} · ${formatBytes(file.size)}` : "PDF or .txt, up to 10 MB"}
+                      {file
+                        ? `${file.name} - ${formatBytes(file.size)}`
+                        : "PDF or .txt, up to 10 MB"}
                     </p>
                   </div>
                 </TabsContent>
@@ -284,7 +477,7 @@ export function RagWorkspace() {
                       value={pastedText}
                       onChange={(event) => setPastedText(event.target.value)}
                       placeholder="Paste document text here"
-                      disabled={uploading}
+                      disabled={uploading || !sessionId}
                     />
                   </div>
                 </TabsContent>
@@ -292,7 +485,11 @@ export function RagWorkspace() {
 
               {uploading ? <Progress value={66} /> : null}
 
-              <Button type="submit" className="w-full" disabled={uploading}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={uploading || !sessionId}
+              >
                 {uploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -386,31 +583,68 @@ export function RagWorkspace() {
                 <p className="text-sm text-muted-foreground">
                   {selectedDocumentIds.length > 0
                     ? `${selectedDocumentIds.length} selected`
-                    : "All ready documents"}
+                    : "This chat's ready documents"}
                 </p>
               </div>
               <Badge variant="secondary">
-                Gemini · Supabase pgvector
+                Gemini - Supabase pgvector
               </Badge>
             </div>
           </header>
 
           <div className="flex flex-1 flex-col p-5">
             <form onSubmit={handleAsk} className="space-y-3">
-              <div className="relative">
+              <section
+                aria-label="Chat composer"
+                onDragEnter={handleChatDragEnter}
+                onDragOver={handleChatDragOver}
+                onDragLeave={handleChatDragLeave}
+                onDrop={handleChatDrop}
+                className={cn(
+                  "relative rounded-lg border border-border bg-card/35 transition-colors",
+                  draggingChatFile && "border-primary bg-primary/10",
+                )}
+              >
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Textarea
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
+                  onPaste={handleQuestionPaste}
                   placeholder="Ask a question about the indexed documents"
-                  className="min-h-24 pl-10 pr-28"
-                  disabled={asking}
+                  className="min-h-32 border-0 bg-transparent pb-16 pl-10 pr-28 focus-visible:ring-0"
+                  disabled={asking || uploadingChatAttachment || !sessionId}
                 />
+                <div className="absolute bottom-3 left-3 flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    title="Attach PDF"
+                    disabled={uploadingChatAttachment || !sessionId}
+                    onClick={() => chatFileInputRef.current?.click()}
+                  >
+                    {uploadingChatAttachment ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Paperclip className="h-4 w-4" />
+                    )}
+                    PDF
+                  </Button>
+                  {uploadingChatAttachment ? (
+                    <span className="text-xs text-muted-foreground">
+                      Indexing context
+                    </span>
+                  ) : null}
+                </div>
                 <Button
                   type="submit"
                   className="absolute bottom-3 right-3"
                   disabled={
-                    asking || readyDocuments.length === 0 || !question.trim()
+                    asking ||
+                    uploadingChatAttachment ||
+                    !sessionId ||
+                    readyDocuments.length === 0 ||
+                    !question.trim()
                   }
                 >
                   {asking ? (
@@ -420,7 +654,23 @@ export function RagWorkspace() {
                   )}
                   Ask
                 </Button>
-              </div>
+                {draggingChatFile ? (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/80 text-sm font-medium text-primary">
+                    Drop PDF to add it to this chat
+                  </div>
+                ) : null}
+              </section>
+              <input
+                ref={chatFileInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="hidden"
+                onChange={(event) => {
+                  const nextFile = event.target.files?.[0];
+                  event.currentTarget.value = "";
+                  if (nextFile) void handleChatPdfFile(nextFile);
+                }}
+              />
             </form>
 
             {notice || error ? (
@@ -487,9 +737,8 @@ export function RagWorkspace() {
                                 </div>
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   {citation.pageNumber
-                                    ? `Page ${citation.pageNumber}`
-                                    : "Text source"}{" "}
-                                  · {formatSimilarity(citation.similarity)}
+                                    ? `Page ${citation.pageNumber} - Block ${citation.chunkIndex + 1}`
+                                    : `Text block ${citation.chunkIndex + 1}`}
                                 </p>
                               </div>
                             </div>
@@ -577,4 +826,23 @@ async function readPayload<T = unknown>(response: Response): Promise<T> {
 
 function getClientError(error: unknown) {
   return error instanceof Error ? error.message : "Request failed.";
+}
+
+function isPdfFile(file: File) {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function shouldTreatPasteAsContext(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+
+  const lineCount = trimmed.split(/\r?\n/).filter((line) => line.trim()).length;
+  return (
+    trimmed.length >= PASTED_CONTEXT_MIN_CHARACTERS ||
+    lineCount >= PASTED_CONTEXT_MIN_LINES
+  );
+}
+
+function hasDraggedFiles(event: DragEvent<HTMLElement>) {
+  return [...event.dataTransfer.types].includes("Files");
 }

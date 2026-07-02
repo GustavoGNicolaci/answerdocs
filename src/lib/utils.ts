@@ -17,7 +17,3 @@ export function formatBytes(bytes: number) {
 
   return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 }
-
-export function formatSimilarity(score: number) {
-  return `${Math.round(score * 100)}%`;
-}

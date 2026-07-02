@@ -7,6 +7,7 @@ export type SourcePage = {
 };
 
 export type DocumentInput = {
+  sessionId: string;
   title: string;
   sourceType: SourceType;
   pages: SourcePage[];
@@ -46,6 +47,6 @@ export type Citation = {
   documentId: string;
   documentTitle: string;
   pageNumber: number | null;
-  similarity: number;
+  chunkIndex: number;
   snippet: string;
 };

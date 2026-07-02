@@ -4,6 +4,7 @@ import {
 import { badRequest, getErrorMessage, toResponseError } from "@/lib/errors";
 import { embedTexts } from "@/lib/gemini";
 import { parseDocumentInput } from "@/lib/ingest";
+import { getSessionIdFromRequest } from "@/lib/session";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { chunkPages } from "@/lib/text";
 import type { DocumentRecord } from "@/lib/types";
@@ -11,14 +12,16 @@ import type { DocumentRecord } from "@/lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const sessionId = getSessionIdFromRequest(request);
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("documents")
       .select(
         "id,title,source_type,status,chunk_count,error_message,created_at,updated_at",
       )
+      .eq("session_id", sessionId)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -56,6 +59,7 @@ export async function POST(request: Request) {
       .from("documents")
       .insert({
         title: input.title,
+        session_id: input.sessionId,
         source_type: input.sourceType,
         status: "indexing",
         chunk_count: 0,
