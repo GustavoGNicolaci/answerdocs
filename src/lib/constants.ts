@@ -12,5 +12,8 @@ export const CHUNK_TARGET_CHARACTERS = 1_200;
 export const CHUNK_OVERLAP_CHARACTERS = 200;
 export const MATCH_COUNT = 6;
 export const MATCH_THRESHOLD = 0.5;
+export const MAX_PUBLIC_CITATIONS = 3;
 export const FALLBACK_ANSWER =
   "I could not find enough information in the uploaded documents to answer that.";
+export const NO_CONTEXT_ANSWER =
+  "There is no file or context loaded to consult. Upload a document or paste text so I can answer from it.";

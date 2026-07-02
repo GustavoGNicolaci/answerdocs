@@ -7,6 +7,8 @@ import {
   FileText,
   Loader2,
   MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
   Paperclip,
   Quote,
   Search,
@@ -73,6 +75,7 @@ export function RagWorkspace() {
   const chatFileInputRef = useRef<HTMLInputElement>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [uploadMode, setUploadMode] = useState<UploadMode>("file");
@@ -400,176 +403,248 @@ export function RagWorkspace() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto grid min-h-screen w-full max-w-7xl gap-0 lg:grid-cols-[380px_1fr]">
+      <div
+        className={cn(
+          "mx-auto grid min-h-screen w-full max-w-7xl gap-0 transition-[grid-template-columns]",
+          isSidebarCollapsed
+            ? "lg:grid-cols-[72px_1fr]"
+            : "lg:grid-cols-[380px_1fr]",
+        )}
+      >
         <aside className="border-b border-border bg-card/40 lg:border-b-0 lg:border-r">
-          <div className="flex h-full flex-col p-5">
-            <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              "flex h-full flex-col p-5",
+              isSidebarCollapsed && "p-3",
+            )}
+          >
+            <div
+              className={cn(
+                "flex items-center gap-3",
+                isSidebarCollapsed && "lg:flex-col",
+              )}
+            >
               <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
                 <Sparkles className="h-5 w-5" />
               </div>
-              <div>
-                <h1 className="text-lg font-semibold tracking-tight">
-                  AnswerDocs
-                </h1>
-                <p className="text-sm text-muted-foreground">RAG workspace</p>
-              </div>
-            </div>
-
-            <Separator className="my-5" />
-
-            <form onSubmit={handleUpload} className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Documents</h2>
-                <Badge variant="secondary">{readyDocuments.length} ready</Badge>
-              </div>
-
-              <Tabs
-                value={uploadMode}
-                onValueChange={(value) => setUploadMode(value as UploadMode)}
-              >
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="file">
-                    <Upload className="mr-2 h-4 w-4" />
-                    Upload
-                  </TabsTrigger>
-                  <TabsTrigger value="text">
-                    <FileText className="mr-2 h-4 w-4" />
-                    Paste
-                  </TabsTrigger>
-                </TabsList>
-
-                <div className="space-y-2">
-                  <Label htmlFor="document-title">Title</Label>
-                  <Input
-                    id="document-title"
-                    value={title}
-                    onChange={(event) => setTitle(event.target.value)}
-                    placeholder="Quarterly report"
-                    disabled={uploading || !sessionId}
-                  />
+              {!isSidebarCollapsed ? (
+                <div>
+                  <h1 className="text-lg font-semibold tracking-tight">
+                    AnswerDocs
+                  </h1>
+                  <p className="text-sm text-muted-foreground">RAG workspace</p>
                 </div>
-
-                <TabsContent value="file">
-                  <div className="space-y-2">
-                    <Label htmlFor="document-file">File</Label>
-                    <Input
-                      id="document-file"
-                      type="file"
-                      accept="application/pdf,text/plain,.pdf,.txt"
-                      disabled={uploading || !sessionId}
-                      onChange={(event) =>
-                        setFile(event.target.files?.[0] ?? null)
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {file
-                        ? `${file.name} - ${formatBytes(file.size)}`
-                        : "PDF or .txt, up to 10 MB"}
-                    </p>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="text">
-                  <div className="space-y-2">
-                    <Label htmlFor="document-text">Text</Label>
-                    <Textarea
-                      id="document-text"
-                      value={pastedText}
-                      onChange={(event) => setPastedText(event.target.value)}
-                      placeholder="Paste document text here"
-                      disabled={uploading || !sessionId}
-                    />
-                  </div>
-                </TabsContent>
-              </Tabs>
-
-              {uploading ? <Progress value={66} /> : null}
-
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={uploading || !sessionId}
-              >
-                {uploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Database className="h-4 w-4" />
-                )}
-                Index document
-              </Button>
-            </form>
-
-            <Separator className="my-5" />
-
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Indexed files</h2>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
-                onClick={() => setSelectedDocumentIds([])}
+                size="icon"
+                className={cn("ml-auto", isSidebarCollapsed && "lg:ml-0")}
+                aria-label={
+                  isSidebarCollapsed
+                    ? "Expand document menu"
+                    : "Collapse document menu"
+                }
+                aria-expanded={!isSidebarCollapsed}
+                title={
+                  isSidebarCollapsed
+                    ? "Expand document menu"
+                    : "Collapse document menu"
+                }
+                onClick={() => setIsSidebarCollapsed((current) => !current)}
               >
-                All
+                {isSidebarCollapsed ? (
+                  <PanelLeftOpen className="h-4 w-4" />
+                ) : (
+                  <PanelLeftClose className="h-4 w-4" />
+                )}
               </Button>
             </div>
 
-            <ScrollArea className="mt-3 min-h-64 flex-1 pr-3">
-              <div className="space-y-2">
-                {loadingDocuments ? (
-                  <DocumentState icon={Loader2} text="Loading documents" spin />
-                ) : documents.length === 0 ? (
-                  <DocumentState icon={FileText} text="No documents indexed" />
-                ) : (
-                  documents.map((document) => (
-                    <Card key={document.id} className="p-3">
-                      <div className="flex items-start gap-3">
-                        <input
-                          aria-label={`Select ${document.title}`}
-                          type="checkbox"
-                          checked={selectedDocumentIds.includes(document.id)}
-                          disabled={document.status !== "ready"}
-                          onChange={() => toggleDocument(document.id)}
-                          className="mt-1 h-4 w-4 rounded border-border accent-[var(--primary)]"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">
-                            {document.title}
-                          </p>
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <Badge variant="outline">
-                              {document.source_type.toUpperCase()}
-                            </Badge>
-                            <StatusBadge status={document.status} />
-                            <span className="text-xs text-muted-foreground">
-                              {document.chunk_count} chunks
-                            </span>
-                          </div>
-                          {document.error_message ? (
-                            <p className="mt-2 text-xs text-destructive">
-                              {document.error_message}
-                            </p>
-                          ) : null}
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          title={`Delete ${document.title}`}
-                          disabled={deletingId === document.id}
-                          onClick={() => void handleDelete(document.id)}
-                        >
-                          {deletingId === document.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </Card>
-                  ))
-                )}
+            {isSidebarCollapsed ? (
+              <div className="mt-3 flex items-center gap-2 lg:mt-5 lg:flex-col">
+                <Badge variant="secondary" className="gap-1">
+                  <FileText className="h-3 w-3" />
+                  <span>{readyDocuments.length}</span>
+                  <span className="lg:hidden">ready</span>
+                </Badge>
+                {selectedDocumentIds.length > 0 ? (
+                  <Badge variant="outline" className="gap-1">
+                    <span>{selectedDocumentIds.length}</span>
+                    <span className="lg:hidden">selected</span>
+                  </Badge>
+                ) : null}
               </div>
-            </ScrollArea>
+            ) : (
+              <>
+                <Separator className="my-5" />
+
+                <form onSubmit={handleUpload} className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold">Documents</h2>
+                    <Badge variant="secondary">
+                      {readyDocuments.length} ready
+                    </Badge>
+                  </div>
+
+                  <Tabs
+                    value={uploadMode}
+                    onValueChange={(value) => setUploadMode(value as UploadMode)}
+                  >
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="file">
+                        <Upload className="mr-2 h-4 w-4" />
+                        Upload
+                      </TabsTrigger>
+                      <TabsTrigger value="text">
+                        <FileText className="mr-2 h-4 w-4" />
+                        Paste
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="document-title">Title</Label>
+                      <Input
+                        id="document-title"
+                        value={title}
+                        onChange={(event) => setTitle(event.target.value)}
+                        placeholder="Quarterly report"
+                        disabled={uploading || !sessionId}
+                      />
+                    </div>
+
+                    <TabsContent value="file">
+                      <div className="space-y-2">
+                        <Label htmlFor="document-file">File</Label>
+                        <Input
+                          id="document-file"
+                          type="file"
+                          accept="application/pdf,text/plain,.pdf,.txt"
+                          disabled={uploading || !sessionId}
+                          onChange={(event) =>
+                            setFile(event.target.files?.[0] ?? null)
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {file
+                            ? `${file.name} - ${formatBytes(file.size)}`
+                            : "PDF or .txt, up to 10 MB"}
+                        </p>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="text">
+                      <div className="space-y-2">
+                        <Label htmlFor="document-text">Text</Label>
+                        <Textarea
+                          id="document-text"
+                          value={pastedText}
+                          onChange={(event) => setPastedText(event.target.value)}
+                          placeholder="Paste document text here"
+                          disabled={uploading || !sessionId}
+                        />
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+
+                  {uploading ? <Progress value={66} /> : null}
+
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={uploading || !sessionId}
+                  >
+                    {uploading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Database className="h-4 w-4" />
+                    )}
+                    Index document
+                  </Button>
+                </form>
+
+                <Separator className="my-5" />
+
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold">Indexed files</h2>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedDocumentIds([])}
+                  >
+                    All
+                  </Button>
+                </div>
+
+                <ScrollArea className="mt-3 min-h-64 flex-1 pr-3">
+                  <div className="space-y-2">
+                    {loadingDocuments ? (
+                      <DocumentState
+                        icon={Loader2}
+                        text="Loading documents"
+                        spin
+                      />
+                    ) : documents.length === 0 ? (
+                      <DocumentState
+                        icon={FileText}
+                        text="No documents indexed"
+                      />
+                    ) : (
+                      documents.map((document) => (
+                        <Card key={document.id} className="p-3">
+                          <div className="flex items-start gap-3">
+                            <input
+                              aria-label={`Select ${document.title}`}
+                              type="checkbox"
+                              checked={selectedDocumentIds.includes(
+                                document.id,
+                              )}
+                              disabled={document.status !== "ready"}
+                              onChange={() => toggleDocument(document.id)}
+                              className="mt-1 h-4 w-4 rounded border-border accent-[var(--primary)]"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium">
+                                {document.title}
+                              </p>
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                <Badge variant="outline">
+                                  {document.source_type.toUpperCase()}
+                                </Badge>
+                                <StatusBadge status={document.status} />
+                                <span className="text-xs text-muted-foreground">
+                                  {document.chunk_count} chunks
+                                </span>
+                              </div>
+                              {document.error_message ? (
+                                <p className="mt-2 text-xs text-destructive">
+                                  {document.error_message}
+                                </p>
+                              ) : null}
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              title={`Delete ${document.title}`}
+                              disabled={deletingId === document.id}
+                              onClick={() => void handleDelete(document.id)}
+                            >
+                              {deletingId === document.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </div>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+                </ScrollArea>
+              </>
+            )}
           </div>
         </aside>
 
@@ -583,7 +658,9 @@ export function RagWorkspace() {
                 <p className="text-sm text-muted-foreground">
                   {selectedDocumentIds.length > 0
                     ? `${selectedDocumentIds.length} selected`
-                    : "This chat's ready documents"}
+                    : readyDocuments.length > 0
+                      ? "This chat's ready documents"
+                      : "No context loaded yet"}
                 </p>
               </div>
               <Badge variant="secondary">
@@ -610,7 +687,7 @@ export function RagWorkspace() {
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
                   onPaste={handleQuestionPaste}
-                  placeholder="Ask a question about the indexed documents"
+                  placeholder="Ask about your documents or how this chat works"
                   className="min-h-32 border-0 bg-transparent pb-16 pl-10 pr-28 focus-visible:ring-0"
                   disabled={asking || uploadingChatAttachment || !sessionId}
                 />
@@ -643,7 +720,6 @@ export function RagWorkspace() {
                     asking ||
                     uploadingChatAttachment ||
                     !sessionId ||
-                    readyDocuments.length === 0 ||
                     !question.trim()
                   }
                 >

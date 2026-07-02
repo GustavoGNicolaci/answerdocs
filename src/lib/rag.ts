@@ -1,4 +1,4 @@
-import { FALLBACK_ANSWER } from "@/lib/constants";
+import { FALLBACK_ANSWER, MAX_PUBLIC_CITATIONS } from "@/lib/constants";
 import type { Citation, MatchDocumentChunk } from "@/lib/types";
 
 export function buildAnswerPrompt(
@@ -25,6 +25,7 @@ export function buildAnswerPrompt(
     "Requirements:",
     "- Write a concise answer in English.",
     "- Cite every factual claim using bracketed citations from the context, for example [1].",
+    `- Use only the citations needed to support the answer and never cite more than ${MAX_PUBLIC_CITATIONS} snippets.`,
     "- Mention the source file name when citing a fact.",
     "- Do not invent facts, file names, page numbers, or citations.",
     "- Do not mention similarity, precision, confidence, ranking, scores, or percentages.",
@@ -41,7 +42,13 @@ export function createCitations(
   matches: MatchDocumentChunk[],
   answer?: string,
 ): Citation[] {
-  const citedIndexes = answer ? getCitedIndexes(answer) : null;
+  const visibleIndexes = answer
+    ? getVisibleCitationIndexes(answer, matches.length)
+    : matches
+        .slice(0, MAX_PUBLIC_CITATIONS)
+        .map((_, index) => index + 1);
+  const visibleIndexSet = new Set(visibleIndexes);
+  const seenChunkIds = new Set<string>();
 
   return matches
     .map((match, index) => ({
@@ -53,7 +60,12 @@ export function createCitations(
       chunkIndex: match.chunk_index,
       snippet: match.content,
     }))
-    .filter((citation) => !citedIndexes || citedIndexes.has(citation.index));
+    .filter((citation) => {
+      if (!visibleIndexSet.has(citation.index)) return false;
+      if (seenChunkIds.has(citation.chunkId)) return false;
+      seenChunkIds.add(citation.chunkId);
+      return true;
+    });
 }
 
 export function normalizeAnswer(answer: string) {
@@ -65,6 +77,33 @@ export function hasInvalidCitationIndexes(answer: string, sourceCount: number) {
   return [...getCitedIndexes(answer)].some(
     (index) => index < 1 || index > sourceCount,
   );
+}
+
+export function removeHiddenCitationMarkers(
+  answer: string,
+  citations: Citation[],
+) {
+  const visibleIndexes = new Set(citations.map((citation) => citation.index));
+
+  return answer
+    .replace(/\s*\[(\d+)\]/g, (match, rawIndex: string) =>
+      visibleIndexes.has(Number(rawIndex)) ? match : "",
+    )
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .trim();
+}
+
+function getVisibleCitationIndexes(answer: string, sourceCount: number) {
+  const citedIndexes = getCitedIndexes(answer);
+  const visibleIndexes: number[] = [];
+
+  for (let index = 1; index <= sourceCount; index += 1) {
+    if (citedIndexes.has(index)) visibleIndexes.push(index);
+    if (visibleIndexes.length === MAX_PUBLIC_CITATIONS) break;
+  }
+
+  return visibleIndexes;
 }
 
 function getCitedIndexes(answer: string) {
