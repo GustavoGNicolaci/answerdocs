@@ -39,8 +39,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn, formatBytes } from "@/lib/utils";
 
 const SESSION_STORAGE_KEY = "answerdocs.sessionId";
-const PASTED_CONTEXT_MIN_CHARACTERS = 600;
-const PASTED_CONTEXT_MIN_LINES = 4;
+const PASTED_CONTEXT_MIN_CHARACTERS = 350;
+const PASTED_CONTEXT_MIN_LINES = 3;
+const PASTED_PDF_ERROR =
+  "Could not process the pasted PDF. Try uploading it or dragging it into the chat.";
 
 type DocumentItem = {
   id: string;
@@ -73,6 +75,7 @@ type UploadMode = "file" | "text";
 
 export function RagWorkspace() {
   const chatFileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -145,6 +148,10 @@ export function RagWorkspace() {
 
     return () => window.clearTimeout(timer);
   }, [sessionId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: "end" });
+  }, [asking, turns.length]);
 
   async function indexDocument(input: {
     file?: File;
@@ -257,13 +264,13 @@ export function RagWorkspace() {
       }>(response);
 
       setTurns((current) => [
+        ...current,
         {
           id: crypto.randomUUID(),
           question: nextQuestion,
           answer: payload.answer,
           citations: payload.citations,
         },
-        ...current,
       ]);
       setQuestion("");
     } catch (requestError) {
@@ -316,8 +323,24 @@ export function RagWorkspace() {
   }
 
   function handleQuestionPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    if (uploadingChatAttachment) return;
+
+    const pastedFile = getPastedPdfFile(event.clipboardData);
+    if (pastedFile.file) {
+      event.preventDefault();
+      void handleChatPdfFile(pastedFile.file);
+      return;
+    }
+
+    if (pastedFile.inaccessibleFile) {
+      event.preventDefault();
+      setNotice(null);
+      setError(PASTED_PDF_ERROR);
+      return;
+    }
+
     const text = event.clipboardData.getData("text/plain");
-    if (!shouldTreatPasteAsContext(text) || uploadingChatAttachment) return;
+    if (!shouldTreatPasteAsContext(text)) return;
 
     event.preventDefault();
     void handlePastedChatContext(text);
@@ -368,8 +391,8 @@ export function RagWorkspace() {
 
   if (!sessionReady) {
     return (
-      <main className="min-h-screen bg-background text-foreground">
-        <div className="mx-auto grid min-h-screen w-full max-w-7xl gap-0 lg:grid-cols-[380px_1fr]">
+      <main className="min-h-dvh bg-background text-foreground lg:h-dvh">
+        <div className="grid min-h-dvh w-full gap-0 lg:h-dvh lg:grid-cols-[380px_minmax(0,1fr)]">
           <aside className="border-b border-border bg-card/40 lg:border-b-0 lg:border-r">
             <div className="flex h-full flex-col p-5">
               <div className="flex items-center gap-3">
@@ -390,7 +413,7 @@ export function RagWorkspace() {
               </div>
             </div>
           </aside>
-          <section className="flex min-h-screen items-center justify-center p-5">
+          <section className="flex min-h-[60dvh] items-center justify-center p-5 lg:min-h-0">
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
               Preparing workspace
@@ -402,19 +425,19 @@ export function RagWorkspace() {
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-dvh bg-background text-foreground lg:h-dvh lg:overflow-hidden">
       <div
         className={cn(
-          "mx-auto grid min-h-screen w-full max-w-7xl gap-0 transition-[grid-template-columns]",
+          "grid min-h-dvh w-full grid-rows-[auto_minmax(0,1fr)] gap-0 transition-[grid-template-columns] lg:h-dvh lg:grid-rows-none lg:overflow-hidden",
           isSidebarCollapsed
-            ? "lg:grid-cols-[72px_1fr]"
-            : "lg:grid-cols-[380px_1fr]",
+            ? "lg:grid-cols-[72px_minmax(0,1fr)]"
+            : "lg:grid-cols-[380px_minmax(0,1fr)]",
         )}
       >
-        <aside className="border-b border-border bg-card/40 lg:border-b-0 lg:border-r">
+        <aside className="min-w-0 border-b border-border bg-card/40 lg:border-b-0 lg:border-r">
           <div
             className={cn(
-              "flex h-full flex-col p-5",
+              "flex h-full min-h-0 flex-col p-5",
               isSidebarCollapsed && "p-3",
             )}
           >
@@ -577,7 +600,7 @@ export function RagWorkspace() {
                   </Button>
                 </div>
 
-                <ScrollArea className="mt-3 min-h-64 flex-1 pr-3">
+                <ScrollArea className="mt-3 min-h-0 flex-1 pr-3">
                   <div className="space-y-2">
                     {loadingDocuments ? (
                       <DocumentState
@@ -648,7 +671,7 @@ export function RagWorkspace() {
           </div>
         </aside>
 
-        <section className="flex min-h-screen flex-col">
+        <section className="flex min-h-[70dvh] min-w-0 flex-col lg:min-h-0">
           <header className="border-b border-border px-5 py-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
@@ -669,8 +692,97 @@ export function RagWorkspace() {
             </div>
           </header>
 
-          <div className="flex flex-1 flex-col p-5">
-            <form onSubmit={handleAsk} className="space-y-3">
+          <div className="flex min-h-0 flex-1 flex-col p-5">
+            {notice || error ? (
+              <div className="mb-4 shrink-0">
+                {notice ? (
+                  <InlineMessage tone="success" message={notice} />
+                ) : null}
+                {error ? <InlineMessage tone="error" message={error} /> : null}
+              </div>
+            ) : null}
+
+            <ScrollArea className="min-h-0 flex-1 pr-3">
+              <div className="space-y-4">
+                {turns.length === 0 && !asking ? (
+                  <div className="flex min-h-80 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
+                    <MessageSquare className="mb-3 h-8 w-8 text-muted-foreground" />
+                    <p className="text-sm font-medium">No questions yet</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Indexed answers will appear here.
+                    </p>
+                  </div>
+                ) : null}
+
+                {turns.map((turn) => (
+                  <article
+                    key={turn.id}
+                    className="rounded-lg border border-border bg-card/40 p-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary">
+                        <MessageSquare className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">{turn.question}</p>
+                        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-foreground">
+                          {turn.answer}
+                        </p>
+                      </div>
+                    </div>
+
+                    {turn.citations.length > 0 ? (
+                      <details className="mt-4 rounded-md border border-border bg-background/40">
+                        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+                          <Quote className="h-4 w-4 text-accent" />
+                          View references ({turn.citations.length})
+                        </summary>
+                        <div className="grid gap-3 border-t border-border p-3 md:grid-cols-2">
+                          {turn.citations.map((citation) => (
+                            <div
+                              key={citation.chunkId}
+                              className="rounded-md border border-border bg-background/50 p-3"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <Quote className="h-4 w-4 text-accent" />
+                                    <span className="text-sm font-medium">
+                                      [{citation.index}] {citation.documentTitle}
+                                    </span>
+                                  </div>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    {citation.pageNumber
+                                      ? `Page ${citation.pageNumber} - Block ${citation.chunkIndex + 1}`
+                                      : `Text block ${citation.chunkIndex + 1}`}
+                                  </p>
+                                </div>
+                              </div>
+                              <p className="mt-3 max-h-28 overflow-hidden text-xs leading-5 text-muted-foreground">
+                                {citation.snippet}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    ) : null}
+                  </article>
+                ))}
+
+                {asking ? (
+                  <div className="rounded-lg border border-border bg-card/50 p-4">
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      Retrieving context and drafting an answer
+                    </div>
+                  </div>
+                ) : null}
+
+                <div ref={messagesEndRef} />
+              </div>
+            </ScrollArea>
+
+            <form onSubmit={handleAsk} className="mt-4 shrink-0 space-y-3">
               <section
                 aria-label="Chat composer"
                 onDragEnter={handleChatDragEnter}
@@ -687,7 +799,7 @@ export function RagWorkspace() {
                   value={question}
                   onChange={(event) => setQuestion(event.target.value)}
                   onPaste={handleQuestionPaste}
-                  placeholder="Ask about your documents or how this chat works"
+                  placeholder="Ask about your documents or paste a PDF/text context"
                   className="min-h-32 border-0 bg-transparent pb-16 pl-10 pr-28 focus-visible:ring-0"
                   disabled={asking || uploadingChatAttachment || !sessionId}
                 />
@@ -748,87 +860,6 @@ export function RagWorkspace() {
                 }}
               />
             </form>
-
-            {notice || error ? (
-              <div className="mt-4">
-                {notice ? (
-                  <InlineMessage tone="success" message={notice} />
-                ) : null}
-                {error ? <InlineMessage tone="error" message={error} /> : null}
-              </div>
-            ) : null}
-
-            <ScrollArea className="mt-5 flex-1 pr-3">
-              <div className="space-y-4">
-                {asking ? (
-                  <div className="rounded-lg border border-border bg-card/50 p-4">
-                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                      Retrieving context and drafting an answer
-                    </div>
-                  </div>
-                ) : null}
-
-                {turns.length === 0 && !asking ? (
-                  <div className="flex min-h-80 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
-                    <MessageSquare className="mb-3 h-8 w-8 text-muted-foreground" />
-                    <p className="text-sm font-medium">No questions yet</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Indexed answers will appear here.
-                    </p>
-                  </div>
-                ) : null}
-
-                {turns.map((turn) => (
-                  <article
-                    key={turn.id}
-                    className="rounded-lg border border-border bg-card/40 p-4"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary">
-                        <MessageSquare className="h-4 w-4 text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium">{turn.question}</p>
-                        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-foreground">
-                          {turn.answer}
-                        </p>
-                      </div>
-                    </div>
-
-                    {turn.citations.length > 0 ? (
-                      <div className="mt-4 grid gap-3 md:grid-cols-2">
-                        {turn.citations.map((citation) => (
-                          <div
-                            key={citation.chunkId}
-                            className="rounded-md border border-border bg-background/50 p-3"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <Quote className="h-4 w-4 text-accent" />
-                                  <span className="text-sm font-medium">
-                                    [{citation.index}] {citation.documentTitle}
-                                  </span>
-                                </div>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {citation.pageNumber
-                                    ? `Page ${citation.pageNumber} - Block ${citation.chunkIndex + 1}`
-                                    : `Text block ${citation.chunkIndex + 1}`}
-                                </p>
-                              </div>
-                            </div>
-                            <p className="mt-3 max-h-28 overflow-hidden text-xs leading-5 text-muted-foreground">
-                              {citation.snippet}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            </ScrollArea>
           </div>
         </section>
       </div>
@@ -906,6 +937,36 @@ function getClientError(error: unknown) {
 
 function isPdfFile(file: File) {
   return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function getPastedPdfFile(clipboardData: DataTransfer) {
+  const files = [...clipboardData.files];
+  const fileListPdf = files.find(isPdfFile);
+
+  if (fileListPdf) {
+    return { file: fileListPdf, inaccessibleFile: false };
+  }
+
+  let inaccessibleFile = false;
+
+  for (const item of [...clipboardData.items]) {
+    if (item.kind !== "file") continue;
+
+    const file = item.getAsFile();
+    if (file && isPdfFile(file)) {
+      return { file, inaccessibleFile: false };
+    }
+
+    if (!file && isPdfClipboardItem(item)) {
+      inaccessibleFile = true;
+    }
+  }
+
+  return { file: null, inaccessibleFile };
+}
+
+function isPdfClipboardItem(item: DataTransferItem) {
+  return item.type === "application/pdf" || item.type === "";
 }
 
 function shouldTreatPasteAsContext(value: string) {
