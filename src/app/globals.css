@@ -1,28 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f5ebe0;
-  --foreground: #33251d;
-  --card: #edede9;
-  --card-foreground: #33251d;
-  --primary: #d5bdaf;
-  --primary-foreground: #2f241e;
-  --secondary: #e3d5ca;
-  --secondary-foreground: #33251d;
-  --muted: #edede9;
-  --muted-foreground: #746159;
-  --accent: #d5bdaf;
-  --accent-foreground: #2f241e;
-  --destructive: #a8483f;
-  --destructive-foreground: #fffaf5;
-  --border: #d6ccc2;
-  --input: #d6ccc2;
-  --ring: #b99585;
-  --surface-soft: #edede9;
-  --surface-warm: #e3d5ca;
-  --surface-cream: #f5ebe0;
-  --shadow-soft: 0 18px 50px color-mix(in oklch, #5b463a 13%, transparent);
-  --shadow-subtle: 0 8px 26px color-mix(in oklch, #5b463a 10%, transparent);
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: #f8fafc;
+  --card-foreground: #0f172a;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #2563eb;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #2563eb;
+  --surface-soft: #f8fafc;
+  --surface-warm: #f1f5f9;
+  --surface-cream: #ffffff;
+  --shadow-soft: 0 18px 50px color-mix(in oklch, #0f172a 10%, transparent);
+  --shadow-subtle: 0 8px 26px color-mix(in oklch, #0f172a 8%, transparent);
   --radius: 0.875rem;
 }
 
@@ -67,7 +67,7 @@ body {
 }
 
 ::selection {
-  background: color-mix(in oklch, var(--primary) 55%, transparent);
+  background: color-mix(in oklch, var(--primary) 24%, transparent);
 }
 
 button,
@@ -77,7 +77,7 @@ textarea {
 }
 
 * {
-  scrollbar-color: color-mix(in oklch, var(--accent) 72%, transparent) transparent;
+  scrollbar-color: color-mix(in oklch, var(--accent) 42%, transparent) transparent;
 }
 
 @keyframes message-in {
