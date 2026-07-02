@@ -21,6 +21,7 @@ import {
   ClipboardEvent,
   DragEvent,
   FormEvent,
+  KeyboardEvent,
   useEffect,
   useMemo,
   useRef,
@@ -75,6 +76,7 @@ type UploadMode = "file" | "text";
 
 export function RagWorkspace() {
   const chatFileInputRef = useRef<HTMLInputElement>(null);
+  const chatFormRef = useRef<HTMLFormElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
@@ -100,6 +102,12 @@ export function RagWorkspace() {
     () => documents.filter((document) => document.status === "ready"),
     [documents],
   );
+  const isInitialChat = turns.length === 0 && !asking;
+  const canSubmitQuestion =
+    Boolean(sessionId) &&
+    !asking &&
+    !uploadingChatAttachment &&
+    question.trim().length > 0;
 
   async function loadDocuments(currentSessionId: string) {
     try {
@@ -240,14 +248,13 @@ export function RagWorkspace() {
   async function handleAsk(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextQuestion = question.trim();
-    if (!nextQuestion) return;
+    if (!nextQuestion || asking || uploadingChatAttachment || !sessionId) return;
 
     setAsking(true);
     setError(null);
     setNotice(null);
 
     try {
-      if (!sessionId) throw new Error("The chat session is not ready yet.");
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -346,6 +353,21 @@ export function RagWorkspace() {
     void handlePastedChatContext(text);
   }
 
+  function handleQuestionKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      event.key !== "Enter" ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    if (canSubmitQuestion) {
+      chatFormRef.current?.requestSubmit();
+    }
+  }
+
   function handleChatDragEnter(event: DragEvent<HTMLElement>) {
     if (!hasDraggedFiles(event)) return;
     event.preventDefault();
@@ -425,16 +447,16 @@ export function RagWorkspace() {
   }
 
   return (
-    <main className="min-h-dvh bg-background text-foreground lg:h-dvh lg:overflow-hidden">
+    <main className="h-dvh overflow-hidden bg-background text-foreground">
       <div
         className={cn(
-          "grid min-h-dvh w-full grid-rows-[auto_minmax(0,1fr)] gap-0 transition-[grid-template-columns] lg:h-dvh lg:grid-rows-none lg:overflow-hidden",
+          "grid h-dvh w-full grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden transition-[grid-template-columns] lg:grid-rows-none",
           isSidebarCollapsed
             ? "lg:grid-cols-[72px_minmax(0,1fr)]"
             : "lg:grid-cols-[380px_minmax(0,1fr)]",
         )}
       >
-        <aside className="min-w-0 border-b border-border bg-card/40 lg:border-b-0 lg:border-r">
+        <aside className="max-h-[32dvh] min-w-0 overflow-y-auto border-b border-border bg-card/40 lg:max-h-none lg:overflow-hidden lg:border-b-0 lg:border-r">
           <div
             className={cn(
               "flex h-full min-h-0 flex-col p-5",
@@ -671,7 +693,7 @@ export function RagWorkspace() {
           </div>
         </aside>
 
-        <section className="flex min-h-[70dvh] min-w-0 flex-col lg:min-h-0">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
           <header className="border-b border-border px-5 py-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
@@ -693,173 +715,180 @@ export function RagWorkspace() {
           </header>
 
           <div className="flex min-h-0 flex-1 flex-col p-5">
-            {notice || error ? (
-              <div className="mb-4 shrink-0">
-                {notice ? (
-                  <InlineMessage tone="success" message={notice} />
-                ) : null}
-                {error ? <InlineMessage tone="error" message={error} /> : null}
-              </div>
-            ) : null}
+            <div
+              className={cn(
+                "mx-auto flex min-h-0 w-full max-w-[960px] flex-1 flex-col",
+                isInitialChat && "justify-center",
+              )}
+            >
+              {notice || error ? (
+                <div className="mb-4 shrink-0">
+                  {notice ? (
+                    <InlineMessage tone="success" message={notice} />
+                  ) : null}
+                  {error ? <InlineMessage tone="error" message={error} /> : null}
+                </div>
+              ) : null}
 
-            <ScrollArea className="min-h-0 flex-1 pr-3">
-              <div className="space-y-4">
-                {turns.length === 0 && !asking ? (
-                  <div className="flex min-h-80 flex-col items-center justify-center rounded-lg border border-dashed border-border text-center">
-                    <MessageSquare className="mb-3 h-8 w-8 text-muted-foreground" />
-                    <p className="text-sm font-medium">No questions yet</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Indexed answers will appear here.
-                    </p>
-                  </div>
-                ) : null}
+              {isInitialChat ? (
+                <div className="mb-5 flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-4 py-10 text-center">
+                  <MessageSquare className="mb-3 h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm font-medium">No questions yet</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Indexed answers will appear here.
+                  </p>
+                </div>
+              ) : (
+                <ScrollArea className="min-h-0 flex-1 pr-3">
+                  <div className="space-y-4">
+                    {turns.map((turn) => (
+                      <article
+                        key={turn.id}
+                        className="rounded-lg border border-border bg-card/40 p-4"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary">
+                            <MessageSquare className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium">{turn.question}</p>
+                            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-foreground">
+                              {turn.answer}
+                            </p>
+                          </div>
+                        </div>
 
-                {turns.map((turn) => (
-                  <article
-                    key={turn.id}
-                    className="rounded-lg border border-border bg-card/40 p-4"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary">
-                        <MessageSquare className="h-4 w-4 text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium">{turn.question}</p>
-                        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-foreground">
-                          {turn.answer}
-                        </p>
-                      </div>
-                    </div>
-
-                    {turn.citations.length > 0 ? (
-                      <details className="mt-4 rounded-md border border-border bg-background/40">
-                        <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
-                          <Quote className="h-4 w-4 text-accent" />
-                          View references ({turn.citations.length})
-                        </summary>
-                        <div className="grid gap-3 border-t border-border p-3 md:grid-cols-2">
-                          {turn.citations.map((citation) => (
-                            <div
-                              key={citation.chunkId}
-                              className="rounded-md border border-border bg-background/50 p-3"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <Quote className="h-4 w-4 text-accent" />
-                                    <span className="text-sm font-medium">
-                                      [{citation.index}] {citation.documentTitle}
-                                    </span>
+                        {turn.citations.length > 0 ? (
+                          <details className="mt-4 rounded-md border border-border bg-background/40">
+                            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+                              <Quote className="h-4 w-4 text-accent" />
+                              View references ({turn.citations.length})
+                            </summary>
+                            <div className="grid gap-3 border-t border-border p-3 md:grid-cols-2">
+                              {turn.citations.map((citation) => (
+                                <div
+                                  key={citation.chunkId}
+                                  className="rounded-md border border-border bg-background/50 p-3"
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <Quote className="h-4 w-4 text-accent" />
+                                        <span className="text-sm font-medium">
+                                          [{citation.index}] {citation.documentTitle}
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 text-xs text-muted-foreground">
+                                        {citation.pageNumber
+                                          ? `Page ${citation.pageNumber} - Block ${citation.chunkIndex + 1}`
+                                          : `Text block ${citation.chunkIndex + 1}`}
+                                      </p>
+                                    </div>
                                   </div>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    {citation.pageNumber
-                                      ? `Page ${citation.pageNumber} - Block ${citation.chunkIndex + 1}`
-                                      : `Text block ${citation.chunkIndex + 1}`}
+                                  <p className="mt-3 max-h-28 overflow-hidden text-xs leading-5 text-muted-foreground">
+                                    {citation.snippet}
                                   </p>
                                 </div>
-                              </div>
-                              <p className="mt-3 max-h-28 overflow-hidden text-xs leading-5 text-muted-foreground">
-                                {citation.snippet}
-                              </p>
+                              ))}
                             </div>
-                          ))}
+                          </details>
+                        ) : null}
+                      </article>
+                    ))}
+
+                    {asking ? (
+                      <div className="rounded-lg border border-border bg-card/50 p-4">
+                        <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          Retrieving context and drafting an answer
                         </div>
-                      </details>
+                      </div>
                     ) : null}
-                  </article>
-                ))}
 
-                {asking ? (
-                  <div className="rounded-lg border border-border bg-card/50 p-4">
-                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                      Retrieving context and drafting an answer
-                    </div>
+                    <div ref={messagesEndRef} />
                   </div>
-                ) : null}
+                </ScrollArea>
+              )}
 
-                <div ref={messagesEndRef} />
-              </div>
-            </ScrollArea>
-
-            <form onSubmit={handleAsk} className="mt-4 shrink-0 space-y-3">
-              <section
-                aria-label="Chat composer"
-                onDragEnter={handleChatDragEnter}
-                onDragOver={handleChatDragOver}
-                onDragLeave={handleChatDragLeave}
-                onDrop={handleChatDrop}
-                className={cn(
-                  "relative rounded-lg border border-border bg-card/35 transition-colors",
-                  draggingChatFile && "border-primary bg-primary/10",
-                )}
+              <form
+                ref={chatFormRef}
+                onSubmit={handleAsk}
+                className={cn("shrink-0 space-y-3", !isInitialChat && "mt-4")}
               >
-                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Textarea
-                  value={question}
-                  onChange={(event) => setQuestion(event.target.value)}
-                  onPaste={handleQuestionPaste}
-                  placeholder="Ask about your documents or paste a PDF/text context"
-                  className="min-h-32 border-0 bg-transparent pb-16 pl-10 pr-28 focus-visible:ring-0"
-                  disabled={asking || uploadingChatAttachment || !sessionId}
-                />
-                <div className="absolute bottom-3 left-3 flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    title="Attach PDF"
-                    disabled={uploadingChatAttachment || !sessionId}
-                    onClick={() => chatFileInputRef.current?.click()}
-                  >
+                <section
+                  aria-label="Chat composer"
+                  onDragEnter={handleChatDragEnter}
+                  onDragOver={handleChatDragOver}
+                  onDragLeave={handleChatDragLeave}
+                  onDrop={handleChatDrop}
+                  className={cn(
+                    "relative rounded-lg border border-border bg-card/35 transition-colors",
+                    draggingChatFile && "border-primary bg-primary/10",
+                  )}
+                >
+                  <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Textarea
+                    value={question}
+                    onChange={(event) => setQuestion(event.target.value)}
+                    onKeyDown={handleQuestionKeyDown}
+                    onPaste={handleQuestionPaste}
+                    placeholder="Ask about your documents or paste a PDF/text context"
+                    className="min-h-32 border-0 bg-transparent pb-16 pl-10 pr-28 focus-visible:ring-0"
+                    disabled={asking || uploadingChatAttachment || !sessionId}
+                  />
+                  <div className="absolute bottom-3 left-3 flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      title="Attach PDF"
+                      disabled={uploadingChatAttachment || !sessionId}
+                      onClick={() => chatFileInputRef.current?.click()}
+                    >
+                      {uploadingChatAttachment ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Paperclip className="h-4 w-4" />
+                      )}
+                      PDF
+                    </Button>
                     {uploadingChatAttachment ? (
+                      <span className="text-xs text-muted-foreground">
+                        Indexing context
+                      </span>
+                    ) : null}
+                  </div>
+                  <Button
+                    type="submit"
+                    className="absolute bottom-3 right-3"
+                    disabled={!canSubmitQuestion}
+                  >
+                    {asking ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <Paperclip className="h-4 w-4" />
+                      <Send className="h-4 w-4" />
                     )}
-                    PDF
+                    Ask
                   </Button>
-                  {uploadingChatAttachment ? (
-                    <span className="text-xs text-muted-foreground">
-                      Indexing context
-                    </span>
+                  {draggingChatFile ? (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/80 text-sm font-medium text-primary">
+                      Drop PDF to add it to this chat
+                    </div>
                   ) : null}
-                </div>
-                <Button
-                  type="submit"
-                  className="absolute bottom-3 right-3"
-                  disabled={
-                    asking ||
-                    uploadingChatAttachment ||
-                    !sessionId ||
-                    !question.trim()
-                  }
-                >
-                  {asking ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  Ask
-                </Button>
-                {draggingChatFile ? (
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-background/80 text-sm font-medium text-primary">
-                    Drop PDF to add it to this chat
-                  </div>
-                ) : null}
-              </section>
-              <input
-                ref={chatFileInputRef}
-                type="file"
-                accept="application/pdf,.pdf"
-                className="hidden"
-                onChange={(event) => {
-                  const nextFile = event.target.files?.[0];
-                  event.currentTarget.value = "";
-                  if (nextFile) void handleChatPdfFile(nextFile);
-                }}
-              />
-            </form>
+                </section>
+                <input
+                  ref={chatFileInputRef}
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  className="hidden"
+                  onChange={(event) => {
+                    const nextFile = event.target.files?.[0];
+                    event.currentTarget.value = "";
+                    if (nextFile) void handleChatPdfFile(nextFile);
+                  }}
+                />
+              </form>
+            </div>
           </div>
         </section>
       </div>
