@@ -79,6 +79,9 @@ export async function extractPdfPages(buffer: Buffer): Promise<SourcePage[]> {
   await ensurePdfCanvasPolyfills();
 
   const { PDFParse } = await import("pdf-parse");
+  const { getData: getPdfWorkerData } = await import("pdf-parse/worker");
+  PDFParse.setWorker(getPdfWorkerData());
+
   const parser = new PDFParse({ data: buffer });
 
   try {
