@@ -13,6 +13,7 @@ import {
   LogIn,
   LogOut,
   Loader2,
+  Menu,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
@@ -25,6 +26,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -139,6 +141,8 @@ export function RagWorkspace() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isMobileFoldersOpen, setIsMobileFoldersOpen] = useState(false);
   const [isDocumentsExpanded, setIsDocumentsExpanded] = useState(false);
   const [isChatsExpanded, setIsChatsExpanded] = useState(false);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -438,6 +442,20 @@ export function RagWorkspace() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isMobileSidebarOpen && !isMobileFoldersOpen) return;
+
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setIsMobileSidebarOpen(false);
+      setIsMobileFoldersOpen(false);
+    }
+
+    window.addEventListener("keydown", handleEscape);
+
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [isMobileFoldersOpen, isMobileSidebarOpen]);
 
   async function indexDocument(input: {
     file?: File;
@@ -768,6 +786,7 @@ export function RagWorkspace() {
   function handleOpenChat(chat: SavedChatItem) {
     setActiveFolderId(chat.folder_id);
     setActiveChatId(chat.id);
+    setIsMobileSidebarOpen(false);
   }
 
   async function handleChatPdfFile(nextFile: File) {
@@ -957,6 +976,673 @@ export function RagWorkspace() {
     });
   }
 
+  function handleMobileFolderSelect(folderId: string) {
+    setActiveFolderId(folderId);
+    setIsMobileFoldersOpen(false);
+  }
+
+  function renderAccountControl(compact = false) {
+    return (
+      <div className="shrink-0">
+        {isAuthenticated ? (
+          <details className="group/account relative">
+            <summary
+              className={cn(
+                "flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-border/80 bg-card/80 text-sm font-medium shadow-sm outline-none transition-all hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden",
+                compact ? "h-10 px-2.5" : "px-3 py-2",
+              )}
+            >
+              <span
+                className={cn(
+                  "truncate",
+                  compact ? "max-w-[6.5rem]" : "max-w-32 sm:max-w-48",
+                )}
+              >
+                {accountLabel}
+              </span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open/account:rotate-180" />
+            </summary>
+            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-2xl border border-border/80 bg-card p-2 shadow-[var(--shadow-soft)]">
+              <Button
+                asChild
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+              >
+                <Link href="/profile">
+                  <Settings className="h-4 w-4" />
+                  {copy.account.accountSettings}
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                disabled={authLoading}
+                onClick={() => void handleSignOut()}
+              >
+                {authLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <LogOut className="h-4 w-4" />
+                )}
+                {copy.account.signOut}
+              </Button>
+            </div>
+          </details>
+        ) : (
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className={cn(compact && "h-10 px-3")}
+          >
+            <Link href="/auth">
+              <LogIn className="h-4 w-4" />
+              {copy.account.signIn}
+            </Link>
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  function renderFolderPill(
+    folder: FolderItem,
+    options: { compact?: boolean; showActions?: boolean } = {},
+  ) {
+    const active = folder.id === activeFolderId;
+    const { compact = false, showActions = true } = options;
+
+    return (
+      <div
+        key={folder.id}
+        className={cn(
+          "group/folder flex shrink-0 items-center rounded-2xl border border-border/80 bg-card/70 shadow-sm transition-all duration-200 hover:-translate-y-px hover:bg-secondary/70",
+          active &&
+            "border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90",
+        )}
+      >
+        <button
+          type="button"
+          className={cn(
+            "flex min-w-0 items-center gap-2 font-medium outline-none",
+            compact ? "px-2.5 py-2 text-xs" : "px-3 py-2 text-sm",
+          )}
+          onClick={() =>
+            compact
+              ? handleMobileFolderSelect(folder.id)
+              : setActiveFolderId(folder.id)
+          }
+        >
+          <Folder className="h-4 w-4 shrink-0" />
+          <span className={cn("truncate", compact ? "max-w-24" : "max-w-40")}>
+            {folder.name}
+          </span>
+        </button>
+        {active && showActions ? (
+          <span className="mr-1 flex items-center gap-0.5">
+            <button
+              type="button"
+              className="rounded-lg p-1 opacity-80 outline-none transition hover:bg-background/20 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+              title={`${copy.common.edit} ${folder.name}`}
+              onClick={() => void handleRenameFolder(folder)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              className="rounded-lg p-1 opacity-80 outline-none transition hover:bg-background/20 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
+              title={`${copy.common.delete} ${folder.name}`}
+              onClick={() => void handleDeleteFolder(folder)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderDesktopFoldersNav() {
+    return (
+      <nav
+        aria-label={t.foldersLabel}
+        className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1"
+      >
+        {isAuthenticated ? (
+          <>
+            {loadingWorkspace ? (
+              <Badge variant="secondary" className="shrink-0 gap-2">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {t.loadingFolders}
+              </Badge>
+            ) : folders.length === 0 ? (
+              <Badge variant="outline" className="shrink-0">
+                {t.noFolders}
+              </Badge>
+            ) : (
+              folders.map((folder) => renderFolderPill(folder))
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => void handleCreateFolder()}
+            >
+              <FolderPlus className="h-4 w-4" />
+              {t.newFolder}
+            </Button>
+          </>
+        ) : (
+          <div className="flex min-w-0 items-center gap-2">
+            <Badge variant="outline" className="shrink-0">
+              {t.guestMode}
+            </Badge>
+            <span className="hidden truncate text-xs text-muted-foreground md:inline">
+              {t.guestNotice}
+            </span>
+          </div>
+        )}
+      </nav>
+    );
+  }
+
+  function renderMobileFoldersNav() {
+    return (
+      <nav
+        aria-label={t.foldersLabel}
+        className="relative flex min-w-0 flex-1 justify-center"
+      >
+        {isAuthenticated ? (
+          <div className="flex min-w-0 flex-1 justify-center">
+            {loadingWorkspace ? (
+              <Badge variant="secondary" className="shrink-0 gap-2">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {t.loadingFolders}
+              </Badge>
+            ) : folders.length === 0 ? (
+              <div className="flex min-w-0 items-center gap-1.5">
+                <Badge variant="outline" className="shrink-0">
+                  {t.noFolders}
+                </Badge>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 rounded-2xl"
+                  aria-label={t.newFolder}
+                  onClick={() => void handleCreateFolder()}
+                >
+                  <FolderPlus className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="relative min-w-0 shrink">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-10 max-w-[min(46vw,13rem)] rounded-2xl px-3"
+                  aria-label={t.foldersLabel}
+                  aria-expanded={isMobileFoldersOpen}
+                  onClick={() =>
+                    setIsMobileFoldersOpen((current) => !current)
+                  }
+                >
+                  <Folder className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {(activeFolder ?? folders[0])?.name}
+                  </span>
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 shrink-0 transition-transform",
+                      isMobileFoldersOpen && "rotate-180",
+                    )}
+                  />
+                </Button>
+                {isMobileFoldersOpen ? (
+                  <div className="absolute left-0 top-[calc(100%+0.5rem)] z-50 max-h-72 w-[min(88vw,20rem)] min-w-full overflow-y-auto rounded-2xl border border-border/80 bg-card p-2 shadow-[var(--shadow-soft)]">
+                    <div className="space-y-1">
+                      {folders.map((folder) => {
+                        const active = folder.id === activeFolderId;
+
+                        return (
+                          <button
+                            key={folder.id}
+                            type="button"
+                            className={cn(
+                              "flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring",
+                              active && "bg-primary text-primary-foreground",
+                            )}
+                            onClick={() => handleMobileFolderSelect(folder.id)}
+                          >
+                            <Folder className="h-4 w-4 shrink-0" />
+                            <span className="truncate">{folder.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <Separator className="my-2" />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start"
+                      onClick={() => {
+                        setIsMobileFoldersOpen(false);
+                        void handleCreateFolder();
+                      }}
+                    >
+                      <FolderPlus className="h-4 w-4" />
+                      {t.newFolder}
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+        ) : (
+          <Badge variant="outline" className="shrink-0">
+            {t.guestMode}
+          </Badge>
+        )}
+      </nav>
+    );
+  }
+
+  function renderSidebarContent({
+    collapsed = false,
+    mobile = false,
+  }: {
+    collapsed?: boolean;
+    mobile?: boolean;
+  } = {}) {
+    const idPrefix = mobile ? "mobile" : "desktop";
+
+    if (collapsed) {
+      return (
+        <div className="flex items-center gap-2 lg:flex-col">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={t.expandDocuments}
+            aria-expanded={false}
+            title={t.expandDocuments}
+            onClick={() => setIsSidebarCollapsed(false)}
+          >
+            <PanelLeftOpen className="h-4 w-4" />
+          </Button>
+          <Badge variant="secondary" className="gap-1">
+            <FileText className="h-3 w-3" />
+            <span>{readyDocuments.length}</span>
+            <span className="lg:hidden">{t.ready}</span>
+          </Badge>
+          {selectedDocumentIds.length > 0 ? (
+            <Badge variant="outline" className="gap-1">
+              <span>{selectedDocumentIds.length}</span>
+              <span className="lg:hidden">{t.selected}</span>
+            </Badge>
+          ) : null}
+          {isAuthenticated ? (
+            <Badge variant="outline" className="gap-1">
+              <MessageSquare className="h-3 w-3" />
+              <span>{visibleChats.length}</span>
+              <span className="lg:hidden">{t.chats}</span>
+            </Badge>
+          ) : null}
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <form onSubmit={handleUpload} className="animate-panel-in space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="text-sm font-semibold">{t.documents}</h2>
+              <Badge variant="secondary">
+                {readyDocuments.length} {t.ready}
+              </Badge>
+            </div>
+            {!mobile ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={t.collapseDocuments}
+                aria-expanded
+                title={t.collapseDocuments}
+                onClick={() => setIsSidebarCollapsed(true)}
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
+
+          <Tabs
+            value={uploadMode}
+            onValueChange={(value) => setUploadMode(value as UploadMode)}
+          >
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="file">
+                <Upload className="mr-2 h-4 w-4" />
+                {t.upload}
+              </TabsTrigger>
+              <TabsTrigger value="text">
+                <FileText className="mr-2 h-4 w-4" />
+                {t.paste}
+              </TabsTrigger>
+            </TabsList>
+
+            <div className="space-y-2">
+              <Label htmlFor={`${idPrefix}-document-title`}>{t.title}</Label>
+              <Input
+                id={`${idPrefix}-document-title`}
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder={t.titlePlaceholder}
+                disabled={documentControlsDisabled}
+              />
+            </div>
+
+            <TabsContent value="file">
+              <div className="space-y-2">
+                <Label htmlFor={`${idPrefix}-document-file`}>{t.file}</Label>
+                <label
+                  htmlFor={`${idPrefix}-document-file`}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-border bg-background/70 px-4 py-3 text-sm shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary hover:bg-secondary/75 hover:shadow-[var(--shadow-subtle)]",
+                    documentControlsDisabled &&
+                      "pointer-events-none cursor-not-allowed opacity-60",
+                  )}
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
+                    <Upload className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium">
+                      {file ? t.changeFile : t.selectFile}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {file
+                        ? `${file.name} - ${formatBytes(file.size)}`
+                        : t.fileHint}
+                    </span>
+                  </span>
+                </label>
+                <input
+                  id={`${idPrefix}-document-file`}
+                  type="file"
+                  accept="application/pdf,text/plain,.pdf,.txt"
+                  disabled={documentControlsDisabled}
+                  className="sr-only"
+                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="text">
+              <div className="space-y-2">
+                <Label htmlFor={`${idPrefix}-document-text`}>{t.text}</Label>
+                <Textarea
+                  id={`${idPrefix}-document-text`}
+                  value={pastedText}
+                  onChange={(event) => setPastedText(event.target.value)}
+                  placeholder={t.textPlaceholder}
+                  disabled={documentControlsDisabled}
+                />
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          {uploading ? <Progress value={66} /> : null}
+
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={documentControlsDisabled}
+          >
+            {uploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Database className="h-4 w-4" />
+            )}
+            {t.indexDocument}
+          </Button>
+        </form>
+
+        <Separator className="my-5" />
+
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">{t.indexedFiles}</h2>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={readyDocuments.length === 0}
+              onClick={selectAllReadyDocuments}
+            >
+              {t.selectAll}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={selectedDocumentIds.length === 0}
+              onClick={clearDocumentSelection}
+            >
+              {t.clear}
+            </Button>
+          </div>
+        </div>
+
+        <ScrollArea
+          className={cn("mt-3 pr-3", isDocumentsExpanded && "h-48")}
+        >
+          <div className="space-y-2">
+            {loadingDocuments ? (
+              <DocumentState icon={Loader2} text={t.loadingDocuments} spin />
+            ) : documents.length === 0 ? (
+              <DocumentState icon={FileText} text={t.noDocuments} />
+            ) : (
+              visibleDocuments.map((document) => (
+                <Card
+                  key={document.id}
+                  className="p-3 shadow-none hover:-translate-y-0.5 hover:shadow-sm"
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      aria-label={`${t.selectAll} ${document.title}`}
+                      type="checkbox"
+                      checked={selectedDocumentIds.includes(document.id)}
+                      disabled={document.status !== "ready"}
+                      onChange={() => toggleDocument(document.id)}
+                      className="mt-1 h-4 w-4 rounded border-border accent-[var(--accent)] transition-transform duration-200 checked:scale-105"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {document.title}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">
+                          {document.source_type.toUpperCase()}
+                        </Badge>
+                        <StatusBadge
+                          status={document.status}
+                          labels={{
+                            ready: t.statusReady,
+                            failed: t.statusFailed,
+                            indexing: t.statusIndexing,
+                          }}
+                        />
+                        <span className="text-xs text-muted-foreground">
+                          {document.chunk_count} {t.chunks}
+                        </span>
+                      </div>
+                      {document.error_message ? (
+                        <p className="mt-2 text-xs text-destructive">
+                          {document.error_message}
+                        </p>
+                      ) : null}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title={`${copy.common.delete} ${document.title}`}
+                      disabled={deletingId === document.id}
+                      onClick={() => void handleDelete(document.id)}
+                    >
+                      {deletingId === document.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+        </ScrollArea>
+        {hiddenDocumentCount > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-2 w-full justify-center text-muted-foreground"
+            onClick={toggleDocumentsExpanded}
+          >
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 transition-transform",
+                isDocumentsExpanded && "rotate-180",
+              )}
+            />
+            {isDocumentsExpanded
+              ? t.showFewerDocuments
+              : `${t.showMoreDocuments} (${hiddenDocumentCount})`}
+          </Button>
+        ) : null}
+
+        <Separator className="my-5" />
+
+        <section className="animate-panel-in min-h-0 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold">{t.chatsTitle}</h2>
+              <p className="text-xs text-muted-foreground">
+                {isAuthenticated
+                  ? (activeFolder?.name ?? t.noFolderSelected)
+                  : t.temporaryGuestChat}
+              </p>
+            </div>
+            {isAuthenticated ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={!activeFolderId}
+                onClick={() => void handleCreateChat()}
+              >
+                <Plus className="h-4 w-4" />
+                {t.newChat}
+              </Button>
+            ) : null}
+          </div>
+
+          {isAuthenticated ? (
+            <>
+              <ScrollArea
+                className={cn("pr-2", isChatsExpanded ? "h-64" : "max-h-48")}
+              >
+                <div className="space-y-2">
+                  {loadingWorkspace ? (
+                    <DocumentState icon={Loader2} text={t.loadingChats} spin />
+                  ) : visibleChats.length === 0 ? (
+                    <DocumentState icon={MessageSquare} text={t.noChats} />
+                  ) : (
+                    visibleSidebarChats.map((chat) => (
+                      <div
+                        key={chat.id}
+                        className={cn(
+                          "rounded-2xl border border-border/75 bg-background/60 p-2 shadow-sm transition-colors",
+                          chat.id === activeChatId && "bg-secondary",
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="min-w-0 flex-1 justify-start px-2"
+                            onClick={() => handleOpenChat(chat)}
+                          >
+                            <MessageSquare className="h-4 w-4 shrink-0" />
+                            <span className="truncate">
+                              {getChatDisplayTitle(chat.title, t.newChatTitle)}
+                            </span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            title={`${copy.common.edit} ${chat.title}`}
+                            onClick={() => void handleRenameChat(chat)}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            title={`${copy.common.delete} ${chat.title}`}
+                            onClick={() => void handleDeleteChat(chat)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+              {hiddenChatCount > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-center text-muted-foreground"
+                  onClick={toggleChatsExpanded}
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 transition-transform",
+                      isChatsExpanded && "rotate-180",
+                    )}
+                  />
+                  {isChatsExpanded
+                    ? t.showFewerChats
+                    : `${t.showMoreChats} (${hiddenChatCount})`}
+                </Button>
+              ) : null}
+            </>
+          ) : (
+            <div className="rounded-2xl border border-border/80 bg-background/65 p-3 text-xs leading-5 text-muted-foreground shadow-sm">
+              {t.guestChatNotice}
+            </div>
+          )}
+        </section>
+      </>
+    );
+  }
+
   if (!sessionReady || !authChecked) {
     return (
       <main className="min-h-dvh bg-background text-foreground lg:h-dvh">
@@ -997,9 +1683,26 @@ export function RagWorkspace() {
   return (
     <main className="h-dvh overflow-hidden bg-background text-foreground">
       <div className="grid h-dvh w-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+        <header className="z-20 flex min-h-14 items-center gap-2 border-b border-border/80 bg-background/90 px-2.5 py-2 shadow-[var(--shadow-subtle)] backdrop-blur lg:hidden">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 rounded-2xl"
+            aria-label={t.openMenu}
+            aria-expanded={isMobileSidebarOpen}
+            onClick={() => setIsMobileSidebarOpen(true)}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+
+          {renderMobileFoldersNav()}
+          {renderAccountControl(true)}
+        </header>
+
         <header
           className={cn(
-            "z-20 grid border-b border-border/80 bg-background/90 shadow-[var(--shadow-subtle)] backdrop-blur transition-[grid-template-columns] duration-300 ease-out lg:min-h-16",
+            "z-20 hidden border-b border-border/80 bg-background/90 shadow-[var(--shadow-subtle)] backdrop-blur transition-[grid-template-columns] duration-300 ease-out lg:grid lg:min-h-16",
             isSidebarCollapsed
               ? "lg:grid-cols-[72px_minmax(0,1fr)]"
               : "lg:grid-cols-[380px_minmax(0,1fr)]",
@@ -1007,7 +1710,7 @@ export function RagWorkspace() {
         >
           <div
             className={cn(
-              "flex items-center border-b border-border/80 bg-card/80 px-3 py-2 sm:px-5 lg:border-b-0 lg:border-r",
+              "flex items-center border-r border-border/80 bg-card/80 px-3 py-2 sm:px-5",
               isSidebarCollapsed && "lg:justify-center lg:px-3",
             )}
           >
@@ -1030,563 +1733,85 @@ export function RagWorkspace() {
           </div>
 
           <div className="flex min-w-0 items-center gap-3 px-3 py-2 sm:px-5">
-            <nav
-              aria-label={t.foldersLabel}
-              className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1"
-            >
-              {isAuthenticated ? (
-                <>
-                  {loadingWorkspace ? (
-                    <Badge variant="secondary" className="shrink-0 gap-2">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      {t.loadingFolders}
-                    </Badge>
-                  ) : folders.length === 0 ? (
-                    <Badge variant="outline" className="shrink-0">
-                      {t.noFolders}
-                    </Badge>
-                  ) : (
-                    folders.map((folder) => {
-                      const active = folder.id === activeFolderId;
-
-                      return (
-                        <div
-                          key={folder.id}
-                          className={cn(
-                            "group/folder flex shrink-0 items-center rounded-2xl border border-border/80 bg-card/70 shadow-sm transition-all duration-200 hover:-translate-y-px hover:bg-secondary/70",
-                            active &&
-                              "border-primary/40 bg-primary text-primary-foreground hover:bg-primary/90",
-                          )}
-                        >
-                          <button
-                            type="button"
-                            className="flex min-w-0 items-center gap-2 px-3 py-2 text-sm font-medium outline-none"
-                            onClick={() => setActiveFolderId(folder.id)}
-                          >
-                            <Folder className="h-4 w-4 shrink-0" />
-                            <span className="max-w-40 truncate">
-                              {folder.name}
-                            </span>
-                          </button>
-                          {active ? (
-                            <span className="mr-1 flex items-center gap-0.5">
-                              <button
-                                type="button"
-                                className="rounded-lg p-1 opacity-80 outline-none transition hover:bg-background/20 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
-                                title={`${copy.common.edit} ${folder.name}`}
-                                onClick={() => void handleRenameFolder(folder)}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                className="rounded-lg p-1 opacity-80 outline-none transition hover:bg-background/20 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
-                                title={`${copy.common.delete} ${folder.name}`}
-                                onClick={() => void handleDeleteFolder(folder)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </span>
-                          ) : null}
-                        </div>
-                      );
-                    })
-                  )}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => void handleCreateFolder()}
-                  >
-                    <FolderPlus className="h-4 w-4" />
-                    {t.newFolder}
-                  </Button>
-                </>
-              ) : (
-                <div className="flex min-w-0 items-center gap-2">
-                  <Badge variant="outline" className="shrink-0">
-                    {t.guestMode}
-                  </Badge>
-                  <span className="hidden truncate text-xs text-muted-foreground md:inline">
-                    {t.guestNotice}
-                  </span>
-                </div>
-              )}
-            </nav>
-
-            <div className="shrink-0">
-              {isAuthenticated ? (
-                <details className="group/account relative">
-                  <summary className="flex cursor-pointer list-none items-center gap-2 rounded-2xl border border-border/80 bg-card/80 px-3 py-2 text-sm font-medium shadow-sm outline-none transition-all hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-                    <span className="max-w-32 truncate sm:max-w-48">
-                      {accountLabel}
-                    </span>
-                    <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-open/account:rotate-180" />
-                  </summary>
-                  <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-52 rounded-2xl border border-border/80 bg-card p-2 shadow-[var(--shadow-soft)]">
-                    <Button
-                      asChild
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-start"
-                    >
-                      <Link href="/profile">
-                        <Settings className="h-4 w-4" />
-                        {copy.account.accountSettings}
-                      </Link>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="w-full justify-start"
-                      disabled={authLoading}
-                      onClick={() => void handleSignOut()}
-                    >
-                      {authLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <LogOut className="h-4 w-4" />
-                      )}
-                      {copy.account.signOut}
-                    </Button>
-                  </div>
-                </details>
-              ) : (
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/auth">
-                    <LogIn className="h-4 w-4" />
-                    {copy.account.signIn}
-                  </Link>
-                </Button>
-              )}
-            </div>
+            {renderDesktopFoldersNav()}
+            {renderAccountControl()}
           </div>
         </header>
 
         <div
           className={cn(
-            "grid min-h-0 w-full grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden transition-[grid-template-columns] duration-300 ease-out lg:grid-rows-none",
+            "relative flex h-full min-h-0 w-full overflow-hidden transition-[grid-template-columns] duration-300 ease-out lg:grid lg:grid-rows-none",
             isSidebarCollapsed
               ? "lg:grid-cols-[72px_minmax(0,1fr)]"
               : "lg:grid-cols-[380px_minmax(0,1fr)]",
           )}
         >
-        <aside className="max-h-[38dvh] min-w-0 overflow-y-auto border-b border-border/80 bg-card/80 shadow-[var(--shadow-subtle)] lg:max-h-none lg:overflow-hidden lg:border-b-0 lg:border-r lg:shadow-none">
-          <div
-            className={cn(
-              "flex h-full min-h-0 flex-col p-5 transition-all duration-300 ease-out",
-              isSidebarCollapsed && "p-3",
-            )}
-          >
-            {isSidebarCollapsed ? (
-              <div className="flex items-center gap-2 lg:flex-col">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label={t.expandDocuments}
-                  aria-expanded={false}
-                  title={t.expandDocuments}
-                  onClick={() => setIsSidebarCollapsed(false)}
-                >
-                  <PanelLeftOpen className="h-4 w-4" />
-                </Button>
-                <Badge variant="secondary" className="gap-1">
-                  <FileText className="h-3 w-3" />
-                  <span>{readyDocuments.length}</span>
-                  <span className="lg:hidden">{t.ready}</span>
-                </Badge>
-                {selectedDocumentIds.length > 0 ? (
-                  <Badge variant="outline" className="gap-1">
-                    <span>{selectedDocumentIds.length}</span>
-                    <span className="lg:hidden">{t.selected}</span>
-                  </Badge>
-                ) : null}
-                {isAuthenticated ? (
-                  <Badge variant="outline" className="gap-1">
-                    <MessageSquare className="h-3 w-3" />
-                    <span>{visibleChats.length}</span>
-                    <span className="lg:hidden">{t.chats}</span>
-                  </Badge>
-                ) : null}
-              </div>
-            ) : (
-              <>
-                <form onSubmit={handleUpload} className="animate-panel-in space-y-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <h2 className="text-sm font-semibold">{t.documents}</h2>
-                      <Badge variant="secondary">
-                        {readyDocuments.length} {t.ready}
-                      </Badge>
+          <aside className="hidden min-w-0 overflow-hidden border-r border-border/80 bg-card/80 shadow-none lg:block">
+            <div
+              className={cn(
+                "flex h-full min-h-0 flex-col p-5 transition-all duration-300 ease-out",
+                isSidebarCollapsed && "p-3",
+              )}
+            >
+              {renderSidebarContent({ collapsed: isSidebarCollapsed })}
+            </div>
+          </aside>
+
+          {isMobileSidebarOpen ? (
+            <div
+              className="fixed inset-0 z-40 lg:hidden"
+              role="dialog"
+              aria-modal="true"
+              aria-label={t.documents}
+            >
+              <button
+                type="button"
+                className="absolute inset-0 bg-foreground/20 backdrop-blur-[2px]"
+                aria-label={t.closeMenu}
+                onClick={() => setIsMobileSidebarOpen(false)}
+              />
+              <aside className="animate-panel-in relative flex h-full w-[min(88vw,24rem)] flex-col overflow-hidden border-r border-border/80 bg-card shadow-[var(--shadow-soft)]">
+                <div className="flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
+                      <Sparkles className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">
+                        AnswerDocs
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t.documents}
+                      </p>
                     </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t.collapseDocuments}
-                      aria-expanded
-                      title={t.collapseDocuments}
-                      onClick={() => setIsSidebarCollapsed(true)}
-                    >
-                      <PanelLeftClose className="h-4 w-4" />
-                    </Button>
                   </div>
-
-                  <Tabs
-                    value={uploadMode}
-                    onValueChange={(value) => setUploadMode(value as UploadMode)}
-                  >
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="file">
-                        <Upload className="mr-2 h-4 w-4" />
-                        {t.upload}
-                      </TabsTrigger>
-                      <TabsTrigger value="text">
-                        <FileText className="mr-2 h-4 w-4" />
-                        {t.paste}
-                      </TabsTrigger>
-                    </TabsList>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="document-title">{t.title}</Label>
-                      <Input
-                        id="document-title"
-                        value={title}
-                        onChange={(event) => setTitle(event.target.value)}
-                        placeholder={t.titlePlaceholder}
-                        disabled={documentControlsDisabled}
-                      />
-                    </div>
-
-                    <TabsContent value="file">
-                      <div className="space-y-2">
-                        <Label htmlFor="document-file">{t.file}</Label>
-                        <label
-                          htmlFor="document-file"
-                          className={cn(
-                            "flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-border bg-background/70 px-4 py-3 text-sm shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary hover:bg-secondary/75 hover:shadow-[var(--shadow-subtle)]",
-                            documentControlsDisabled &&
-                              "pointer-events-none cursor-not-allowed opacity-60",
-                          )}
-                        >
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-                            <Upload className="h-4 w-4" />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block font-medium">
-                              {file ? t.changeFile : t.selectFile}
-                            </span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {file
-                                ? `${file.name} - ${formatBytes(file.size)}`
-                                : t.fileHint}
-                            </span>
-                          </span>
-                        </label>
-                        <input
-                          id="document-file"
-                          type="file"
-                          accept="application/pdf,text/plain,.pdf,.txt"
-                          disabled={documentControlsDisabled}
-                          className="sr-only"
-                          onChange={(event) =>
-                            setFile(event.target.files?.[0] ?? null)
-                          }
-                        />
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="text">
-                      <div className="space-y-2">
-                        <Label htmlFor="document-text">{t.text}</Label>
-                        <Textarea
-                          id="document-text"
-                          value={pastedText}
-                          onChange={(event) => setPastedText(event.target.value)}
-                          placeholder={t.textPlaceholder}
-                          disabled={documentControlsDisabled}
-                        />
-                      </div>
-                    </TabsContent>
-                  </Tabs>
-
-                  {uploading ? <Progress value={66} /> : null}
-
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={documentControlsDisabled}
-                  >
-                    {uploading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Database className="h-4 w-4" />
-                    )}
-                    {t.indexDocument}
-                  </Button>
-                </form>
-
-                <Separator className="my-5" />
-
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-sm font-semibold">{t.indexedFiles}</h2>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={readyDocuments.length === 0}
-                      onClick={selectAllReadyDocuments}
-                    >
-                      {t.selectAll}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={selectedDocumentIds.length === 0}
-                      onClick={clearDocumentSelection}
-                    >
-                      {t.clear}
-                    </Button>
-                  </div>
-                </div>
-
-                <ScrollArea
-                  className={cn(
-                    "mt-3 pr-3",
-                    isDocumentsExpanded && "h-48",
-                  )}
-                >
-                  <div className="space-y-2">
-                    {loadingDocuments ? (
-                      <DocumentState
-                        icon={Loader2}
-                        text={t.loadingDocuments}
-                        spin
-                      />
-                    ) : documents.length === 0 ? (
-                      <DocumentState
-                        icon={FileText}
-                        text={t.noDocuments}
-                      />
-                    ) : (
-                      visibleDocuments.map((document) => (
-                        <Card
-                          key={document.id}
-                          className="p-3 shadow-none hover:-translate-y-0.5 hover:shadow-sm"
-                        >
-                          <div className="flex items-start gap-3">
-                            <input
-                              aria-label={`${t.selectAll} ${document.title}`}
-                              type="checkbox"
-                              checked={selectedDocumentIds.includes(
-                                document.id,
-                              )}
-                              disabled={document.status !== "ready"}
-                              onChange={() => toggleDocument(document.id)}
-                              className="mt-1 h-4 w-4 rounded border-border accent-[var(--accent)] transition-transform duration-200 checked:scale-105"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium">
-                                {document.title}
-                              </p>
-                              <div className="mt-2 flex flex-wrap items-center gap-2">
-                                <Badge variant="outline">
-                                  {document.source_type.toUpperCase()}
-                                </Badge>
-                                <StatusBadge
-                                  status={document.status}
-                                  labels={{
-                                    ready: t.statusReady,
-                                    failed: t.statusFailed,
-                                    indexing: t.statusIndexing,
-                                  }}
-                                />
-                                <span className="text-xs text-muted-foreground">
-                                  {document.chunk_count} {t.chunks}
-                                </span>
-                              </div>
-                              {document.error_message ? (
-                                <p className="mt-2 text-xs text-destructive">
-                                  {document.error_message}
-                                </p>
-                              ) : null}
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              title={`${copy.common.delete} ${document.title}`}
-                              disabled={deletingId === document.id}
-                              onClick={() => void handleDelete(document.id)}
-                            >
-                              {deletingId === document.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </Card>
-                      ))
-                    )}
-                  </div>
-                </ScrollArea>
-                {hiddenDocumentCount > 0 ? (
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
-                    className="mt-2 w-full justify-center text-muted-foreground"
-                    onClick={toggleDocumentsExpanded}
+                    size="icon"
+                    aria-label={t.closeMenu}
+                    onClick={() => setIsMobileSidebarOpen(false)}
                   >
-                    <ChevronDown
-                      className={cn(
-                        "h-4 w-4 transition-transform",
-                        isDocumentsExpanded && "rotate-180",
-                      )}
-                    />
-                    {isDocumentsExpanded
-                      ? t.showFewerDocuments
-                      : `${t.showMoreDocuments} (${hiddenDocumentCount})`}
+                    <X className="h-4 w-4" />
                   </Button>
-                ) : null}
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  {renderSidebarContent({ mobile: true })}
+                </div>
+              </aside>
+            </div>
+          ) : null}
 
-                <Separator className="my-5" />
-
-                <section className="animate-panel-in min-h-0 space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <h2 className="text-sm font-semibold">{t.chatsTitle}</h2>
-                      <p className="text-xs text-muted-foreground">
-                        {isAuthenticated
-                          ? (activeFolder?.name ?? t.noFolderSelected)
-                          : t.temporaryGuestChat}
-                      </p>
-                    </div>
-                    {isAuthenticated ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={!activeFolderId}
-                        onClick={() => void handleCreateChat()}
-                      >
-                        <Plus className="h-4 w-4" />
-                        {t.newChat}
-                      </Button>
-                    ) : null}
-                  </div>
-
-                  {isAuthenticated ? (
-                    <>
-                    <ScrollArea
-                      className={cn(
-                        "pr-2",
-                        isChatsExpanded ? "h-64" : "max-h-48",
-                      )}
-                    >
-                      <div className="space-y-2">
-                        {loadingWorkspace ? (
-                          <DocumentState
-                            icon={Loader2}
-                            text={t.loadingChats}
-                            spin
-                          />
-                        ) : visibleChats.length === 0 ? (
-                          <DocumentState icon={MessageSquare} text={t.noChats} />
-                        ) : (
-                          visibleSidebarChats.map((chat) => (
-                            <div
-                              key={chat.id}
-                              className={cn(
-                                "rounded-2xl border border-border/75 bg-background/60 p-2 shadow-sm transition-colors",
-                                chat.id === activeChatId && "bg-secondary",
-                              )}
-                            >
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="min-w-0 flex-1 justify-start px-2"
-                                  onClick={() => handleOpenChat(chat)}
-                                >
-                                  <MessageSquare className="h-4 w-4 shrink-0" />
-                                  <span className="truncate">
-                                    {getChatDisplayTitle(chat.title, t.newChatTitle)}
-                                  </span>
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  title={`${copy.common.edit} ${chat.title}`}
-                                  onClick={() => void handleRenameChat(chat)}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  title={`${copy.common.delete} ${chat.title}`}
-                                  onClick={() => void handleDeleteChat(chat)}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </ScrollArea>
-                    {hiddenChatCount > 0 ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="w-full justify-center text-muted-foreground"
-                        onClick={toggleChatsExpanded}
-                      >
-                        <ChevronDown
-                          className={cn(
-                            "h-4 w-4 transition-transform",
-                            isChatsExpanded && "rotate-180",
-                          )}
-                        />
-                        {isChatsExpanded
-                          ? t.showFewerChats
-                          : `${t.showMoreChats} (${hiddenChatCount})`}
-                      </Button>
-                    ) : null}
-                    </>
-                  ) : (
-                    <div className="rounded-2xl border border-border/80 bg-background/65 p-3 text-xs leading-5 text-muted-foreground shadow-sm">
-                      {t.guestChatNotice}
-                    </div>
-                  )}
-                </section>
-              </>
-            )}
-          </div>
-        </aside>
-
-        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-          <header className="border-b border-border/80 bg-background/70 px-5 py-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold tracking-tight">
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <header className="border-b border-border/80 bg-background/70 px-3 py-3 sm:px-5 sm:py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-base font-semibold tracking-tight sm:text-xl">
                   {activeChat
                     ? getChatDisplayTitle(activeChat.title, t.newChatTitle)
                     : t.askDocuments}
                 </h2>
-                <p className="text-sm text-muted-foreground">
+                <p className="truncate text-xs text-muted-foreground sm:text-sm">
                   {selectedDocumentIds.length > 0
                     ? `${selectedDocumentIds.length} ${t.selected}`
                     : readyDocuments.length > 0
@@ -1596,13 +1821,13 @@ export function RagWorkspace() {
                         : t.noContext}
                 </p>
               </div>
-              <Badge variant="secondary" className="self-start md:self-auto">
+              <Badge variant="secondary" className="hidden shrink-0 sm:inline-flex">
                 {isAuthenticated ? t.savedWorkspace : t.guestWorkspace}
               </Badge>
             </div>
           </header>
 
-          <div className="flex min-h-0 flex-1 flex-col p-4 sm:p-5">
+          <div className="flex min-h-0 flex-1 flex-col p-3 sm:p-5">
             <div
               className={cn(
                 "mx-auto flex min-h-0 w-full max-w-[980px] flex-1 flex-col",
@@ -1619,7 +1844,7 @@ export function RagWorkspace() {
               ) : null}
 
               {isInitialChat ? (
-                <div className="animate-panel-in mb-5 flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/90 bg-card/70 px-4 py-10 text-center shadow-[var(--shadow-subtle)]">
+                <div className="animate-panel-in mb-4 flex flex-col items-center justify-center rounded-3xl border border-dashed border-border/90 bg-card/70 px-4 py-8 text-center shadow-[var(--shadow-subtle)] sm:mb-5 sm:py-10">
                   <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary text-accent-foreground shadow-sm">
                     <MessageSquare className="h-6 w-6" />
                   </div>
@@ -1629,15 +1854,15 @@ export function RagWorkspace() {
                   </p>
                 </div>
               ) : (
-                <ScrollArea className="min-h-0 flex-1 pr-2 sm:pr-3">
-                  <div className="flex min-h-full flex-col justify-end gap-4 pb-1">
+                <ScrollArea className="min-h-0 flex-1 pr-1 sm:pr-3">
+                  <div className="flex min-h-full flex-col justify-end gap-3 pb-1 sm:gap-4">
                     {turns.map((turn) => (
                       <article
                         key={turn.id}
                         className="animate-message-in flex flex-col gap-3"
                       >
-                        <div className="group/message ml-auto flex max-w-[86%] flex-col items-end gap-1 sm:max-w-[76%]">
-                          <div className="min-w-0 rounded-3xl rounded-br-lg bg-primary px-4 py-3 text-primary-foreground shadow-sm">
+                        <div className="group/message ml-auto flex max-w-[92%] flex-col items-end gap-1 sm:max-w-[76%]">
+                          <div className="min-w-0 rounded-3xl rounded-br-lg bg-primary px-3.5 py-2.5 text-primary-foreground shadow-sm sm:px-4 sm:py-3">
                             <p className="select-text whitespace-pre-wrap text-sm leading-6">
                               {turn.question}
                             </p>
@@ -1653,8 +1878,8 @@ export function RagWorkspace() {
                           />
                         </div>
 
-                        <div className="group/message mr-auto max-w-[94%] rounded-3xl rounded-bl-lg border border-border/80 bg-card/85 p-4 text-card-foreground shadow-[var(--shadow-subtle)] sm:max-w-[86%]">
-                          <div className="flex items-start gap-3">
+                        <div className="group/message mr-auto max-w-full rounded-3xl rounded-bl-lg border border-border/80 bg-card/85 p-3.5 text-card-foreground shadow-[var(--shadow-subtle)] sm:max-w-[86%] sm:p-4">
+                          <div className="flex items-start gap-2.5 sm:gap-3">
                             <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-secondary text-accent-foreground shadow-sm">
                               <Sparkles className="h-4 w-4" />
                             </div>
@@ -1719,7 +1944,7 @@ export function RagWorkspace() {
                     ))}
 
                     {asking ? (
-                      <div className="animate-message-in mr-auto rounded-3xl rounded-bl-lg border border-border/80 bg-card/80 p-4 shadow-[var(--shadow-subtle)]">
+                      <div className="animate-message-in mr-auto rounded-3xl rounded-bl-lg border border-border/80 bg-card/80 p-3.5 shadow-[var(--shadow-subtle)] sm:p-4">
                         <div className="flex items-center gap-3 text-sm text-muted-foreground">
                           <Loader2 className="h-4 w-4 animate-spin text-accent-foreground" />
                           {t.retrieving}
@@ -1735,7 +1960,7 @@ export function RagWorkspace() {
               <form
                 ref={chatFormRef}
                 onSubmit={handleAsk}
-                className={cn("shrink-0 space-y-3", !isInitialChat && "mt-4")}
+                className={cn("shrink-0 space-y-3", !isInitialChat && "mt-3 sm:mt-4")}
               >
                 <section
                   aria-label={t.composerLabel}
@@ -1756,7 +1981,7 @@ export function RagWorkspace() {
                     onKeyDown={handleQuestionKeyDown}
                     onPaste={handleQuestionPaste}
                     placeholder={t.composerPlaceholder}
-                    className="min-h-32 border-0 bg-transparent pb-14 pl-11 pr-28 shadow-none focus-visible:ring-0"
+                    className="min-h-24 border-0 bg-transparent pb-14 pl-10 pr-24 text-sm shadow-none focus-visible:ring-0 sm:min-h-32 sm:pl-11 sm:pr-28"
                     disabled={
                       asking ||
                       uploadingChatAttachment ||
@@ -1771,7 +1996,7 @@ export function RagWorkspace() {
                   ) : null}
                   <Button
                     type="submit"
-                    className="absolute bottom-3 right-3"
+                    className="absolute bottom-3 right-3 h-9 px-3 sm:h-10 sm:px-4"
                     disabled={!canSubmitQuestion}
                   >
                     {asking ? (

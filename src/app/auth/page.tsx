@@ -121,13 +121,19 @@ export default function AuthPage() {
           </div>
 
           <Tabs value={mode} onValueChange={(value) => setMode(value as AuthMode)}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">
-                <LogIn className="mr-2 h-4 w-4" />
+            <TabsList className="grid h-12 w-full grid-cols-2 rounded-2xl p-1.5">
+              <TabsTrigger
+                value="login"
+                className="h-9 min-w-0 gap-1 px-1.5 text-[11px] leading-none min-[380px]:px-2 min-[380px]:text-xs sm:px-3 sm:text-sm"
+              >
+                <LogIn className="h-4 w-4 shrink-0" />
                 {copy.auth.login}
               </TabsTrigger>
-              <TabsTrigger value="signup">
-                <Plus className="mr-2 h-4 w-4" />
+              <TabsTrigger
+                value="signup"
+                className="h-9 min-w-0 gap-1 px-1.5 text-[11px] leading-none min-[380px]:px-2 min-[380px]:text-xs sm:px-3 sm:text-sm"
+              >
+                <Plus className="h-4 w-4 shrink-0" />
                 {copy.auth.createAccount}
               </TabsTrigger>
             </TabsList>
