@@ -1,9 +1,11 @@
 export type SourceType = "pdf" | "text";
 export type DocumentStatus = "indexing" | "ready" | "failed";
+export type SourceExtractionMethod = "native" | "ocr" | "combined";
 
 export type SourcePage = {
   pageNumber: number | null;
   text: string;
+  extractionMethod?: SourceExtractionMethod;
 };
 
 export type DocumentInput = {

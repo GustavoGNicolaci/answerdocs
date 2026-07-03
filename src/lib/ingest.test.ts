@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseDocumentInput } from "@/lib/ingest";
-import { extractPdfPages } from "@/lib/pdf";
+import { extractPdfDocument } from "@/lib/pdf";
 import {
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_MB,
 } from "@/lib/upload-limits";
 
 vi.mock("@/lib/pdf", () => ({
-  extractPdfPages: vi.fn(),
+  extractPdfDocument: vi.fn(),
 }));
 
 const sessionId = "11111111-1111-4111-8111-111111111111";
@@ -15,9 +15,10 @@ const sessionId = "11111111-1111-4111-8111-111111111111";
 describe("document ingestion", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.mocked(extractPdfPages).mockResolvedValue([
-      { pageNumber: 1, text: "Readable PDF text." },
-    ]);
+    vi.mocked(extractPdfDocument).mockResolvedValue({
+      pages: [{ pageNumber: 1, text: "Readable PDF text." }],
+      metadata: { ocr: { applied: false } },
+    });
   });
 
   it("accepts a PDF file at the 20 MB limit", async () => {
@@ -27,7 +28,8 @@ describe("document ingestion", () => {
 
     expect(input.sourceType).toBe("pdf");
     expect(input.metadata.size).toBe(MAX_UPLOAD_FILE_BYTES);
-    expect(extractPdfPages).toHaveBeenCalledOnce();
+    expect(input.metadata.ocr).toEqual({ applied: false });
+    expect(extractPdfDocument).toHaveBeenCalledOnce();
   });
 
   it("rejects a PDF file above the 20 MB limit before extracting text", async () => {
@@ -40,7 +42,19 @@ describe("document ingestion", () => {
       statusCode: 400,
     });
 
-    expect(extractPdfPages).not.toHaveBeenCalled();
+    expect(extractPdfDocument).not.toHaveBeenCalled();
+  });
+
+  it("validates scope before extracting PDF text or OCR", async () => {
+    await expect(
+      parseDocumentInput(createUploadRequest(createSizedPdfFile(128)), {
+        validateScope: () => {
+          throw new Error("Invalid scope.");
+        },
+      }),
+    ).rejects.toThrow("Invalid scope.");
+
+    expect(extractPdfDocument).not.toHaveBeenCalled();
   });
 });
 

@@ -3,7 +3,7 @@ import { MAX_CHUNKS_PER_DOCUMENT } from "@/lib/constants";
 import { requireAuthenticatedUser } from "@/lib/auth";
 import { badRequest, getErrorMessage, toResponseError } from "@/lib/errors";
 import { embedTexts } from "@/lib/gemini";
-import { parseDocumentInput } from "@/lib/ingest";
+import { parseDocumentInput, type DocumentInputScope } from "@/lib/ingest";
 import { getSessionIdFromRequest } from "@/lib/session";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { chunkPages } from "@/lib/text";
@@ -11,7 +11,7 @@ import type { DocumentRecord } from "@/lib/types";
 import { requireOwnedChat, requireOwnedFolder } from "@/lib/workspace";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const documentSelect =
   "id,title,source_type,status,chunk_count,error_message,selected,created_at,updated_at";
@@ -61,24 +61,16 @@ export async function POST(request: Request) {
   let documentId: string | null = null;
 
   try {
-    const input = await parseDocumentInput(request);
     const supabase = getSupabaseAdmin();
     let userId: string | null = null;
     let folderId: string | null = null;
-
-    if (input.folderId) {
-      const user = await requireAuthenticatedUser();
-      const folder = await requireOwnedFolder(supabase, user.id, input.folderId);
-      userId = user.id;
-      folderId = folder.id;
-    } else if (input.chatId) {
-      const user = await requireAuthenticatedUser();
-      const chat = await requireOwnedChat(supabase, user.id, input.chatId);
-      userId = user.id;
-      folderId = chat.folder_id;
-    } else if (!input.sessionId) {
-      throw badRequest("A valid sessionId or folderId is required.");
-    }
+    const input = await parseDocumentInput(request, {
+      validateScope: async (scope) => {
+        const resolvedScope = await resolveDocumentWriteScope(supabase, scope);
+        userId = resolvedScope.userId;
+        folderId = resolvedScope.folderId;
+      },
+    });
 
     const chunks = chunkPages(input.pages);
 
@@ -167,6 +159,29 @@ export async function POST(request: Request) {
 
     return toResponseError(error);
   }
+}
+
+async function resolveDocumentWriteScope(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  scope: DocumentInputScope,
+) {
+  if (scope.folderId) {
+    const user = await requireAuthenticatedUser();
+    const folder = await requireOwnedFolder(supabase, user.id, scope.folderId);
+    return { userId: user.id, folderId: folder.id };
+  }
+
+  if (scope.chatId) {
+    const user = await requireAuthenticatedUser();
+    const chat = await requireOwnedChat(supabase, user.id, scope.chatId);
+    return { userId: user.id, folderId: chat.folder_id };
+  }
+
+  if (!scope.sessionId) {
+    throw badRequest("A valid sessionId or folderId is required.");
+  }
+
+  return { userId: null, folderId: null };
 }
 
 export async function PATCH(request: Request) {

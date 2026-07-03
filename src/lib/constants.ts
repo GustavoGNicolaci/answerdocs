@@ -8,6 +8,9 @@ export {
 export const GEMINI_CHAT_MODEL =
   process.env.GEMINI_CHAT_MODEL ?? "gemini-3.1-flash-lite";
 
+export const GEMINI_OCR_MODEL =
+  process.env.GEMINI_OCR_MODEL ?? GEMINI_CHAT_MODEL;
+
 export const GEMINI_EMBEDDING_MODEL =
   process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-2";
 
@@ -20,6 +23,7 @@ export const CHUNK_OVERLAP_CHARACTERS = 200;
 export const MATCH_COUNT = 6;
 export const MATCH_THRESHOLD = 0.5;
 export const MAX_PUBLIC_CITATIONS = 3;
+export const PDF_OCR_PAGE_TEXT_MIN_CHARACTERS = 80;
 export const FALLBACK_ANSWER =
   "I could not find enough information in the uploaded documents to answer that.";
 export const SELECTED_DOCUMENTS_FALLBACK_ANSWER =

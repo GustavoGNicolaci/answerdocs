@@ -34,6 +34,7 @@ import {
   DragEvent,
   FormEvent,
   KeyboardEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -225,7 +226,7 @@ export function RagWorkspace() {
     });
   }
 
-  async function loadAuthSession() {
+  const loadAuthSession = useCallback(async () => {
     try {
       const response = await fetch("/api/auth/session", { cache: "no-store" });
       if (!response.ok) {
@@ -249,9 +250,9 @@ export function RagWorkspace() {
     } finally {
       setAuthChecked(true);
     }
-  }
+  }, [setLanguage]);
 
-  async function loadWorkspace(preferredChatId?: string) {
+  const loadWorkspace = useCallback(async (preferredChatId?: string) => {
     setLoadingWorkspace(true);
     setError(null);
 
@@ -286,7 +287,7 @@ export function RagWorkspace() {
     } finally {
       setLoadingWorkspace(false);
     }
-  }
+  }, [setLanguage]);
 
   async function loadSavedMessages(chatId: string) {
     try {
@@ -336,7 +337,7 @@ export function RagWorkspace() {
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [loadAuthSession]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -383,7 +384,7 @@ export function RagWorkspace() {
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [authChecked, authUserId, sessionId, sessionReady]);
+  }, [authChecked, authUserId, loadWorkspace, sessionId, sessionReady]);
 
   useEffect(() => {
     if (!authUserId || !activeChatId) return;
@@ -1423,7 +1424,14 @@ export function RagWorkspace() {
             </TabsContent>
           </Tabs>
 
-          {uploading ? <Progress value={66} /> : null}
+          {uploading ? (
+            <div className="space-y-2">
+              <Progress value={66} />
+              <p className="text-xs text-muted-foreground">
+                {t.indexingContext}
+              </p>
+            </div>
+          ) : null}
 
           <Button
             type="submit"
@@ -1488,8 +1496,11 @@ export function RagWorkspace() {
                       onChange={() => toggleDocument(document.id)}
                       className="mt-1 h-4 w-4 rounded border-border accent-[var(--accent)] transition-transform duration-200 checked:scale-105"
                     />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <p
+                        className="max-w-full truncate text-sm font-medium"
+                        title={document.title}
+                      >
                         {document.title}
                       </p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1518,6 +1529,7 @@ export function RagWorkspace() {
                       type="button"
                       variant="ghost"
                       size="icon"
+                      className="shrink-0"
                       title={`${copy.common.delete} ${document.title}`}
                       disabled={deletingId === document.id}
                       onClick={() => void handleDelete(document.id)}
@@ -1599,16 +1611,20 @@ export function RagWorkspace() {
                           chat.id === activeChatId && "bg-secondary",
                         )}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="min-w-0 flex-1 justify-start px-2"
+                            className="w-full min-w-0 justify-start overflow-hidden px-2"
+                            title={getChatDisplayTitle(
+                              chat.title,
+                              t.newChatTitle,
+                            )}
                             onClick={() => handleOpenChat(chat)}
                           >
                             <MessageSquare className="h-4 w-4 shrink-0" />
-                            <span className="truncate">
+                            <span className="block min-w-0 max-w-full truncate">
                               {getChatDisplayTitle(chat.title, t.newChatTitle)}
                             </span>
                           </Button>
@@ -1616,6 +1632,7 @@ export function RagWorkspace() {
                             type="button"
                             variant="ghost"
                             size="icon"
+                            className="shrink-0"
                             title={`${copy.common.edit} ${chat.title}`}
                             onClick={() => void handleRenameChat(chat)}
                           >
@@ -1625,6 +1642,7 @@ export function RagWorkspace() {
                             type="button"
                             variant="ghost"
                             size="icon"
+                            className="shrink-0"
                             title={`${copy.common.delete} ${chat.title}`}
                             onClick={() => void handleDeleteChat(chat)}
                           >
@@ -1830,7 +1848,7 @@ export function RagWorkspace() {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="truncate text-base font-semibold tracking-tight sm:text-xl">
-                  {activeChat
+                  {activeChat && isSidebarCollapsed
                     ? getChatDisplayTitle(activeChat.title, t.newChatTitle)
                     : t.askDocuments}
                 </h2>

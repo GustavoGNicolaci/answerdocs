@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { MAX_TEXT_CHARACTERS } from "@/lib/constants";
 import { badRequest } from "@/lib/errors";
-import { extractPdfPages } from "@/lib/pdf";
+import { extractPdfDocument } from "@/lib/pdf";
 import { parseSessionId, sessionIdSchema } from "@/lib/session";
 import { normalizeText } from "@/lib/text";
 import type { DocumentInput } from "@/lib/types";
@@ -18,18 +18,27 @@ const jsonDocumentSchema = z.object({
   text: z.string().trim().min(1).max(MAX_TEXT_CHARACTERS),
 });
 
-type InputScope = {
+export type DocumentInputScope = {
   sessionId: string | null;
   chatId: string | null;
   folderId: string | null;
 };
 
-export async function parseDocumentInput(request: Request): Promise<DocumentInput> {
+type ParseDocumentInputOptions = {
+  validateScope?: (scope: DocumentInputScope) => Promise<void> | void;
+};
+
+export async function parseDocumentInput(
+  request: Request,
+  options: ParseDocumentInputOptions = {},
+): Promise<DocumentInput> {
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("application/json")) {
     const body = jsonDocumentSchema.parse(await request.json());
-    return createTextInput(body.text, toInputScope(body), body.title);
+    const scope = toInputScope(body);
+    await options.validateScope?.(scope);
+    return createTextInput(body.text, scope, body.title);
   }
 
   const formData = await request.formData();
@@ -43,6 +52,7 @@ export async function parseDocumentInput(request: Request): Promise<DocumentInpu
   const pastedText = stringValue(formData.get("text"));
   const file = formData.get("file");
   const scope = { sessionId, chatId, folderId };
+  await options.validateScope?.(scope);
 
   if (file instanceof File && file.size > 0) {
     return parseFileInput(file, scope, title);
@@ -57,7 +67,7 @@ export async function parseDocumentInput(request: Request): Promise<DocumentInpu
 
 async function parseFileInput(
   file: File,
-  scope: InputScope,
+  scope: DocumentInputScope,
   title?: string,
 ): Promise<DocumentInput> {
   if (file.size > MAX_UPLOAD_FILE_BYTES) {
@@ -70,14 +80,15 @@ async function parseFileInput(
 
   if (file.type === "application/pdf" || lowerName.endsWith(".pdf")) {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const pages = await extractPdfPages(buffer);
+    const extraction = await extractPdfDocument(buffer, filename);
 
     return {
       ...scope,
       title: documentTitle,
       sourceType: "pdf",
-      pages,
+      pages: extraction.pages,
       metadata: {
+        ...extraction.metadata,
         originalName: filename,
         size: file.size,
         mimeType: file.type || "application/pdf",
@@ -104,7 +115,7 @@ async function parseFileInput(
 
 function createTextInput(
   value: string,
-  scope: InputScope,
+  scope: DocumentInputScope,
   title = "Pasted text",
   metadata: Record<string, unknown> = {},
 ): DocumentInput {

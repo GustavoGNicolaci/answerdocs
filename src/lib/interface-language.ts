@@ -145,7 +145,7 @@ export const INTERFACE_COPY = {
       composerLabel: "Chat composer",
       composerPlaceholder:
         "Ask about your documents or paste a PDF/text context",
-      indexingContext: "Indexing context",
+      indexingContext: "Processing document. Scanned pages may take longer.",
       ask: "Ask",
       dropPdf: "Drop PDF to add it to this folder",
       viewReferences: "View references",
@@ -354,7 +354,8 @@ export const INTERFACE_COPY = {
       composerLabel: "Campo de mensagem",
       composerPlaceholder:
         "Pergunte sobre seus documentos ou cole um PDF/texto como contexto",
-      indexingContext: "Indexando contexto",
+      indexingContext:
+        "Processando documento. PÃ¡ginas escaneadas podem demorar mais.",
       ask: "Enviar",
       dropPdf: "Solte o PDF para adicioná-lo a esta pasta",
       viewReferences: "Ver referências",
