@@ -136,7 +136,7 @@ export const INTERFACE_COPY = {
       showFewerChats: "Show fewer chats",
       showMoreChats: "Show more chats",
       guestChatNotice:
-        "Guest chats stay temporary. Sign in from the top-right account button to save chats and history.",
+        "To keep your history, create an account or sign in.",
       askDocuments: "Ask your documents",
       selectDocuments: "Select documents to ask from",
       noFolderDocuments: "No folder documents yet",
@@ -349,7 +349,7 @@ export const INTERFACE_COPY = {
       showFewerChats: "Mostrar menos chats",
       showMoreChats: "Mostrar mais chats",
       guestChatNotice:
-        "Chats de visitante são temporários. Entre pelo botão de conta no topo para salvar chats e histórico.",
+        "Para manter seu histórico salvo, crie uma conta ou entre na sua conta.",
       askDocuments: "Pergunte aos seus documentos",
       selectDocuments: "Selecione documentos para perguntar",
       noFolderDocuments: "Nenhum documento nesta pasta",

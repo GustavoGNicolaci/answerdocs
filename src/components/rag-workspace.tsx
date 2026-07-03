@@ -2015,14 +2015,14 @@ export function RagWorkspace() {
                       "border-primary bg-secondary shadow-[var(--shadow-soft)]",
                   )}
                 >
-                  <Search className="pointer-events-none absolute left-4 top-4 h-4 w-4 text-muted-foreground" />
+                  <Search className="pointer-events-none absolute left-4 top-3.5 h-4 w-4 text-muted-foreground" />
                   <Textarea
                     value={question}
                     onChange={(event) => setQuestion(event.target.value)}
                     onKeyDown={handleQuestionKeyDown}
                     onPaste={handleQuestionPaste}
                     placeholder={t.composerPlaceholder}
-                    className="min-h-20 border-0 bg-transparent pb-11 pl-10 pr-24 text-sm shadow-none focus-visible:ring-0 sm:min-h-28 sm:pb-12 sm:pl-11 sm:pr-28"
+                    className="min-h-[72px] border-0 bg-transparent py-3 pl-10 pr-24 text-sm leading-6 shadow-none focus-visible:ring-0 sm:min-h-24 sm:pl-11 sm:pr-28"
                     disabled={
                       asking ||
                       uploadingChatAttachment ||
@@ -2030,14 +2030,14 @@ export function RagWorkspace() {
                     }
                   />
                   {uploadingChatAttachment ? (
-                    <div className="absolute bottom-3 left-4 flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="absolute bottom-2.5 left-4 flex items-center gap-2 text-xs text-muted-foreground">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-foreground" />
                       {t.indexingContext}
                     </div>
                   ) : null}
                   <Button
                     type="submit"
-                    className="absolute bottom-2.5 right-2.5 h-8 px-3 sm:bottom-3 sm:right-3 sm:h-9 sm:px-4"
+                    className="absolute right-2 top-1/2 h-8 -translate-y-1/2 px-3 sm:right-2.5 sm:px-4"
                     disabled={!canSubmitQuestion}
                   >
                     {asking ? (
