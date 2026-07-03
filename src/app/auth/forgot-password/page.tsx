@@ -8,8 +8,8 @@ import {
   CheckCircle2,
   Loader2,
   Mail,
-  Sparkles,
 } from "lucide-react";
+import { AnswerDocsLogo } from "@/components/answerdocs-logo";
 import { useInterfaceLanguage } from "@/components/interface-language-provider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -72,7 +72,7 @@ export default function ForgotPasswordPage() {
           </Link>
           <div className="flex items-center gap-2 text-sm font-semibold">
             <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-              <Sparkles className="h-4 w-4" />
+              <AnswerDocsLogo className="h-4 w-4" />
             </span>
             {copy.common.answerDocs}
           </div>

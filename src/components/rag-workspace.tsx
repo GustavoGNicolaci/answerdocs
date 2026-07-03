@@ -23,7 +23,6 @@ import {
   Search,
   Send,
   Settings,
-  Sparkles,
   Trash2,
   Upload,
   X,
@@ -41,6 +40,7 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import { AnswerDocsLogo } from "@/components/answerdocs-logo";
 import { useInterfaceLanguage } from "@/components/interface-language-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1692,7 +1692,7 @@ export function RagWorkspace() {
             <div className="flex h-full flex-col p-5">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-                  <Sparkles className="h-5 w-5" />
+                  <AnswerDocsLogo className="h-5 w-5" />
                 </div>
                 <div>
                   <h1 className="text-lg font-semibold tracking-tight">
@@ -1760,7 +1760,7 @@ export function RagWorkspace() {
               className="flex shrink-0 items-center gap-2 rounded-2xl px-1 py-1 outline-none transition-colors hover:bg-secondary/60 focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-                <Sparkles className="h-4 w-4" />
+                <AnswerDocsLogo className="h-4 w-4" />
               </span>
               <span
                 className={cn(
@@ -1815,7 +1815,7 @@ export function RagWorkspace() {
                 <div className="flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-                      <Sparkles className="h-4 w-4" />
+                      <AnswerDocsLogo className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">
@@ -1922,7 +1922,7 @@ export function RagWorkspace() {
                         <div className="group/message mr-auto max-w-full rounded-3xl rounded-bl-lg border border-border/80 bg-card/85 p-3.5 text-card-foreground shadow-[var(--shadow-subtle)] sm:max-w-[86%] sm:p-4">
                           <div className="flex items-start gap-2.5 sm:gap-3">
                             <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-secondary text-accent-foreground shadow-sm">
-                              <Sparkles className="h-4 w-4" />
+                              <AnswerDocsLogo className="h-4 w-4" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="select-text whitespace-pre-wrap text-sm leading-6">
@@ -2022,7 +2022,7 @@ export function RagWorkspace() {
                     onKeyDown={handleQuestionKeyDown}
                     onPaste={handleQuestionPaste}
                     placeholder={t.composerPlaceholder}
-                    className="min-h-24 border-0 bg-transparent pb-14 pl-10 pr-24 text-sm shadow-none focus-visible:ring-0 sm:min-h-32 sm:pl-11 sm:pr-28"
+                    className="min-h-20 border-0 bg-transparent pb-11 pl-10 pr-24 text-sm shadow-none focus-visible:ring-0 sm:min-h-28 sm:pb-12 sm:pl-11 sm:pr-28"
                     disabled={
                       asking ||
                       uploadingChatAttachment ||
@@ -2030,14 +2030,14 @@ export function RagWorkspace() {
                     }
                   />
                   {uploadingChatAttachment ? (
-                    <div className="absolute bottom-4 left-4 flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="absolute bottom-3 left-4 flex items-center gap-2 text-xs text-muted-foreground">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-foreground" />
                       {t.indexingContext}
                     </div>
                   ) : null}
                   <Button
                     type="submit"
-                    className="absolute bottom-3 right-3 h-9 px-3 sm:h-10 sm:px-4"
+                    className="absolute bottom-2.5 right-2.5 h-8 px-3 sm:bottom-3 sm:right-3 sm:h-9 sm:px-4"
                     disabled={!canSubmitQuestion}
                   >
                     {asking ? (
