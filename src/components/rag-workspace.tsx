@@ -54,6 +54,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { LOCALIZED_CHAT_MESSAGES } from "@/lib/constants";
 import { detectResponseLanguage } from "@/lib/language";
 import type { ResponseLanguage } from "@/lib/types";
+import { isUploadFileTooLarge } from "@/lib/upload-limits";
 import { cn, formatBytes } from "@/lib/utils";
 
 const SESSION_STORAGE_KEY = "answerdocs.sessionId";
@@ -457,6 +458,14 @@ export function RagWorkspace() {
     return () => window.removeEventListener("keydown", handleEscape);
   }, [isMobileFoldersOpen, isMobileSidebarOpen]);
 
+  function validateUploadFileSize(nextFile: File) {
+    if (!isUploadFileTooLarge(nextFile.size)) return true;
+
+    setNotice(null);
+    setError(t.fileTooLarge);
+    return false;
+  }
+
   async function indexDocument(input: {
     file?: File;
     text?: string;
@@ -505,6 +514,7 @@ export function RagWorkspace() {
       let uploadedDocument: DocumentItem;
       if (uploadMode === "file") {
         if (!file) throw new Error(t.chooseFile);
+        if (!validateUploadFileSize(file)) return;
         uploadedDocument = await indexDocument({ file, title });
       } else {
         if (!pastedText.trim()) throw new Error(t.pasteTextBeforeIndexing);
@@ -797,6 +807,8 @@ export function RagWorkspace() {
       setError(t.attachPdf);
       return;
     }
+
+    if (!validateUploadFileSize(nextFile)) return;
 
     setUploadingChatAttachment(true);
 
@@ -1381,7 +1393,18 @@ export function RagWorkspace() {
                   accept="application/pdf,text/plain,.pdf,.txt"
                   disabled={documentControlsDisabled}
                   className="sr-only"
-                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  onChange={(event) => {
+                    const nextFile = event.target.files?.[0] ?? null;
+
+                    if (nextFile && !validateUploadFileSize(nextFile)) {
+                      event.target.value = "";
+                      setFile(null);
+                      return;
+                    }
+
+                    setError(null);
+                    setFile(nextFile);
+                  }}
                 />
               </div>
             </TabsContent>

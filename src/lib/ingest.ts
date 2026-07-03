@@ -1,13 +1,14 @@
 import { z } from "zod";
-import {
-  MAX_FILE_BYTES,
-  MAX_TEXT_CHARACTERS,
-} from "@/lib/constants";
+import { MAX_TEXT_CHARACTERS } from "@/lib/constants";
 import { badRequest } from "@/lib/errors";
 import { extractPdfPages } from "@/lib/pdf";
 import { parseSessionId, sessionIdSchema } from "@/lib/session";
 import { normalizeText } from "@/lib/text";
 import type { DocumentInput } from "@/lib/types";
+import {
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_MB,
+} from "@/lib/upload-limits";
 
 const jsonDocumentSchema = z.object({
   sessionId: sessionIdSchema.optional(),
@@ -59,8 +60,8 @@ async function parseFileInput(
   scope: InputScope,
   title?: string,
 ): Promise<DocumentInput> {
-  if (file.size > MAX_FILE_BYTES) {
-    throw badRequest("Files must be 10 MB or smaller.");
+  if (file.size > MAX_UPLOAD_FILE_BYTES) {
+    throw badRequest(`Files must be ${MAX_UPLOAD_FILE_MB} MB or smaller.`);
   }
 
   const filename = sanitizeTitle(file.name);

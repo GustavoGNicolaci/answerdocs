@@ -1,3 +1,10 @@
+import { MAX_UPLOAD_FILE_BYTES } from "@/lib/upload-limits";
+
+export {
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILE_MB,
+} from "@/lib/upload-limits";
+
 export const GEMINI_CHAT_MODEL =
   process.env.GEMINI_CHAT_MODEL ?? "gemini-3.1-flash-lite";
 
@@ -5,7 +12,7 @@ export const GEMINI_EMBEDDING_MODEL =
   process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-2";
 
 export const EMBEDDING_DIMENSIONS = 768;
-export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_FILE_BYTES = MAX_UPLOAD_FILE_BYTES;
 export const MAX_TEXT_CHARACTERS = 150_000;
 export const MAX_CHUNKS_PER_DOCUMENT = 120;
 export const CHUNK_TARGET_CHARACTERS = 1_200;
