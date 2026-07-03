@@ -21,6 +21,7 @@ import {
   Quote,
   Search,
   Send,
+  Settings,
   Sparkles,
   Trash2,
   Upload,
@@ -37,6 +38,7 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import { useInterfaceLanguage } from "@/components/interface-language-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -58,8 +60,6 @@ const COPY_FEEDBACK_TIMEOUT_MS = 1_600;
 const PASTED_CONTEXT_MIN_CHARACTERS = 350;
 const PASTED_CONTEXT_MIN_LINES = 3;
 const SIDEBAR_LIST_LIMIT = 2;
-const PASTED_PDF_ERROR =
-  "Could not process the pasted PDF. Try uploading it or dragging it into the chat.";
 
 type DocumentItem = {
   id: string;
@@ -101,6 +101,9 @@ type ProfileItem = {
   id: string;
   full_name: string;
   email: string | null;
+  created_at: string;
+  updated_at: string;
+  interface_language: "en" | "pt";
 };
 
 type FolderItem = {
@@ -119,6 +122,8 @@ type SavedChatItem = {
 };
 
 export function RagWorkspace() {
+  const { setLanguage, copy } = useInterfaceLanguage();
+  const t = copy.workspace;
   const chatFormRef = useRef<HTMLFormElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
@@ -160,7 +165,7 @@ export function RagWorkspace() {
   );
   const authUserId = authUser?.id ?? null;
   const isAuthenticated = Boolean(authUserId);
-  const accountLabel = getAccountLabel(profile, authUser);
+  const accountLabel = getAccountLabel(profile, authUser, copy.account.account);
   const activeFolder = useMemo(
     () => folders.find((folder) => folder.id === activeFolderId) ?? null,
     [activeFolderId, folders],
@@ -230,6 +235,9 @@ export function RagWorkspace() {
       }>(response);
       setAuthUser(payload.user);
       setProfile(payload.profile);
+      if (payload.profile?.interface_language) {
+        setLanguage(payload.profile.interface_language);
+      }
     } catch {
       setAuthUser(null);
       setProfile(null);
@@ -253,6 +261,7 @@ export function RagWorkspace() {
 
       setAuthUser(payload.user);
       setProfile(payload.profile);
+      setLanguage(payload.profile.interface_language);
       setFolders(payload.folders);
       setChats(payload.chats);
 
@@ -436,10 +445,10 @@ export function RagWorkspace() {
     title?: string;
   }) {
     if (!sessionId) {
-      throw new Error("The chat session is not ready yet.");
+      throw new Error(t.sessionNotReady);
     }
     if (isAuthenticated && !activeFolderId) {
-      throw new Error("Open a folder before adding documents.");
+      throw new Error(t.openFolderBeforeAdding);
     }
 
     const formData = new FormData();
@@ -477,14 +486,14 @@ export function RagWorkspace() {
     try {
       let uploadedDocument: DocumentItem;
       if (uploadMode === "file") {
-        if (!file) throw new Error("Choose a PDF or .txt file.");
+        if (!file) throw new Error(t.chooseFile);
         uploadedDocument = await indexDocument({ file, title });
       } else {
-        if (!pastedText.trim()) throw new Error("Paste text before indexing.");
+        if (!pastedText.trim()) throw new Error(t.pasteTextBeforeIndexing);
         uploadedDocument = await indexDocument({ text: pastedText, title });
       }
 
-      setNotice(`Indexed "${uploadedDocument.title}".`);
+      setNotice(`${t.indexedDocument} "${uploadedDocument.title}".`);
       setFile(null);
       setTitle("");
       setPastedText("");
@@ -501,9 +510,9 @@ export function RagWorkspace() {
     setNotice(null);
 
     try {
-      if (!sessionId) throw new Error("The chat session is not ready yet.");
+      if (!sessionId) throw new Error(t.sessionNotReady);
       if (isAuthenticated && !activeFolderId) {
-        throw new Error("Open a folder before deleting documents.");
+        throw new Error(t.openFolderBeforeDeleting);
       }
 
       const query = isAuthenticated
@@ -520,7 +529,7 @@ export function RagWorkspace() {
       setSelectedDocumentIds((current) =>
         current.filter((id) => id !== documentId),
       );
-      setNotice("Document removed.");
+      setNotice(t.documentRemoved);
     } catch (requestError) {
       setError(getClientError(requestError));
     } finally {
@@ -533,7 +542,7 @@ export function RagWorkspace() {
     const nextQuestion = question.trim();
     if (!nextQuestion || asking || uploadingChatAttachment || !sessionId) return;
     if (isAuthenticated && !activeChatId) {
-      setError("Create or open a chat before asking.");
+      setError(t.openChatBeforeAsking);
       return;
     }
 
@@ -580,7 +589,7 @@ export function RagWorkspace() {
               ? {
                   ...chat,
                   title:
-                    chat.title === "New chat"
+                    chat.title === t.newChatTitle || chat.title === "New chat"
                       ? createLocalChatTitle(nextQuestion)
                       : chat.title,
                   updated_at: new Date().toISOString(),
@@ -611,7 +620,7 @@ export function RagWorkspace() {
         );
       }, COPY_FEEDBACK_TIMEOUT_MS);
     } catch {
-      setError("Could not copy message.");
+      setError(t.copyFailed);
     }
   }
 
@@ -636,7 +645,7 @@ export function RagWorkspace() {
         setLoadingDocuments(true);
         await loadDocuments({ sessionId });
       }
-      setNotice("Signed out. You are using guest mode.");
+      setNotice(copy.account.signedOut);
     } catch (requestError) {
       setError(getClientError(requestError));
     } finally {
@@ -645,7 +654,7 @@ export function RagWorkspace() {
   }
 
   async function handleCreateFolder() {
-    const name = window.prompt("Folder name", "New folder");
+    const name = window.prompt(t.folderNamePrompt, t.newFolder);
     if (!name?.trim()) return;
 
     try {
@@ -667,7 +676,7 @@ export function RagWorkspace() {
   }
 
   async function handleRenameFolder(folder: FolderItem) {
-    const name = window.prompt("Rename folder", folder.name);
+    const name = window.prompt(t.renameFolderPrompt, folder.name);
     if (!name?.trim() || name.trim() === folder.name) return;
 
     try {
@@ -686,7 +695,7 @@ export function RagWorkspace() {
   async function handleDeleteFolder(folder: FolderItem) {
     if (
       !window.confirm(
-        `Delete "${folder.name}" and all chats and documents inside it?`,
+        `${copy.common.delete} "${folder.name}" ${t.deleteFolderConfirmSuffix}`,
       )
     ) {
       return;
@@ -720,7 +729,7 @@ export function RagWorkspace() {
   }
 
   async function handleRenameChat(chat: SavedChatItem) {
-    const title = window.prompt("Rename chat", chat.title);
+    const title = window.prompt(t.renameChatPrompt, chat.title);
     if (!title?.trim() || title.trim() === chat.title) return;
 
     try {
@@ -739,7 +748,7 @@ export function RagWorkspace() {
   async function handleDeleteChat(chat: SavedChatItem) {
     if (
       !window.confirm(
-        `Delete "${chat.title}" and its messages? Folder documents will stay available.`,
+        `${copy.common.delete} "${chat.title}" ${t.deleteChatConfirmSuffix}`,
       )
     ) {
       return;
@@ -766,7 +775,7 @@ export function RagWorkspace() {
     setNotice(null);
 
     if (!isPdfFile(nextFile)) {
-      setError("Attach a PDF file.");
+      setError(t.attachPdf);
       return;
     }
 
@@ -777,7 +786,9 @@ export function RagWorkspace() {
         file: nextFile,
         title: nextFile.name,
       });
-      setNotice(`Added "${uploadedDocument.title}" to this folder.`);
+      setNotice(
+        `${t.addedToFolder} "${uploadedDocument.title}" ${t.addedToFolderSuffix}`,
+      );
     } catch (requestError) {
       setError(getClientError(requestError));
     } finally {
@@ -793,9 +804,11 @@ export function RagWorkspace() {
     try {
       const uploadedDocument = await indexDocument({
         text,
-        title: "Pasted document context",
+        title: t.pastedDocumentContext,
       });
-      setNotice(`Added "${uploadedDocument.title}" to this folder.`);
+      setNotice(
+        `${t.addedToFolder} "${uploadedDocument.title}" ${t.addedToFolderSuffix}`,
+      );
     } catch (requestError) {
       setError(getClientError(requestError));
     } finally {
@@ -816,7 +829,7 @@ export function RagWorkspace() {
     if (pastedFile.inaccessibleFile) {
       event.preventDefault();
       setNotice(null);
-      setError(PASTED_PDF_ERROR);
+      setError(t.pastedPdfError);
       return;
     }
 
@@ -958,20 +971,22 @@ export function RagWorkspace() {
                   <h1 className="text-lg font-semibold tracking-tight">
                     AnswerDocs
                   </h1>
-                  <p className="text-sm text-muted-foreground">RAG workspace</p>
+                  <p className="text-sm text-muted-foreground">
+                    {t.savedWorkspace}
+                  </p>
                 </div>
               </div>
               <Separator className="my-5" />
               <div className="animate-panel-in flex items-center gap-2 rounded-2xl border border-dashed border-border/90 bg-card/70 px-3 py-4 text-sm text-muted-foreground shadow-sm">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Preparing chat session
+                {t.preparingChat}
               </div>
             </div>
           </aside>
           <section className="flex min-h-[60dvh] items-center justify-center p-5 lg:min-h-0">
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin text-accent-foreground" />
-              Preparing workspace
+              {t.preparingWorkspace}
             </div>
           </section>
         </div>
@@ -1016,7 +1031,7 @@ export function RagWorkspace() {
 
           <div className="flex min-w-0 items-center gap-3 px-3 py-2 sm:px-5">
             <nav
-              aria-label="Folders"
+              aria-label={t.foldersLabel}
               className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto py-1"
             >
               {isAuthenticated ? (
@@ -1024,11 +1039,11 @@ export function RagWorkspace() {
                   {loadingWorkspace ? (
                     <Badge variant="secondary" className="shrink-0 gap-2">
                       <Loader2 className="h-3 w-3 animate-spin" />
-                      Loading folders
+                      {t.loadingFolders}
                     </Badge>
                   ) : folders.length === 0 ? (
                     <Badge variant="outline" className="shrink-0">
-                      No folders
+                      {t.noFolders}
                     </Badge>
                   ) : (
                     folders.map((folder) => {
@@ -1058,7 +1073,7 @@ export function RagWorkspace() {
                               <button
                                 type="button"
                                 className="rounded-lg p-1 opacity-80 outline-none transition hover:bg-background/20 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
-                                title={`Rename ${folder.name}`}
+                                title={`${copy.common.edit} ${folder.name}`}
                                 onClick={() => void handleRenameFolder(folder)}
                               >
                                 <Pencil className="h-3.5 w-3.5" />
@@ -1066,7 +1081,7 @@ export function RagWorkspace() {
                               <button
                                 type="button"
                                 className="rounded-lg p-1 opacity-80 outline-none transition hover:bg-background/20 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring"
-                                title={`Delete ${folder.name}`}
+                                title={`${copy.common.delete} ${folder.name}`}
                                 onClick={() => void handleDeleteFolder(folder)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -1085,16 +1100,16 @@ export function RagWorkspace() {
                     onClick={() => void handleCreateFolder()}
                   >
                     <FolderPlus className="h-4 w-4" />
-                    New folder
+                    {t.newFolder}
                   </Button>
                 </>
               ) : (
                 <div className="flex min-w-0 items-center gap-2">
                   <Badge variant="outline" className="shrink-0">
-                    Guest mode
+                    {t.guestMode}
                   </Badge>
                   <span className="hidden truncate text-xs text-muted-foreground md:inline">
-                    Sign in to save folders, chats, documents, and history.
+                    {t.guestNotice}
                   </span>
                 </div>
               )}
@@ -1109,7 +1124,19 @@ export function RagWorkspace() {
                     </span>
                     <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-open/account:rotate-180" />
                   </summary>
-                  <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-40 rounded-2xl border border-border/80 bg-card p-2 shadow-[var(--shadow-soft)]">
+                  <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 w-52 rounded-2xl border border-border/80 bg-card p-2 shadow-[var(--shadow-soft)]">
+                    <Button
+                      asChild
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start"
+                    >
+                      <Link href="/profile">
+                        <Settings className="h-4 w-4" />
+                        {copy.account.accountSettings}
+                      </Link>
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"
@@ -1123,7 +1150,7 @@ export function RagWorkspace() {
                       ) : (
                         <LogOut className="h-4 w-4" />
                       )}
-                      Sign out
+                      {copy.account.signOut}
                     </Button>
                   </div>
                 </details>
@@ -1131,7 +1158,7 @@ export function RagWorkspace() {
                 <Button asChild variant="outline" size="sm">
                   <Link href="/auth">
                     <LogIn className="h-4 w-4" />
-                    Sign in
+                    {copy.account.signIn}
                   </Link>
                 </Button>
               )}
@@ -1160,9 +1187,9 @@ export function RagWorkspace() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  aria-label="Expand document menu"
+                  aria-label={t.expandDocuments}
                   aria-expanded={false}
-                  title="Expand document menu"
+                  title={t.expandDocuments}
                   onClick={() => setIsSidebarCollapsed(false)}
                 >
                   <PanelLeftOpen className="h-4 w-4" />
@@ -1170,19 +1197,19 @@ export function RagWorkspace() {
                 <Badge variant="secondary" className="gap-1">
                   <FileText className="h-3 w-3" />
                   <span>{readyDocuments.length}</span>
-                  <span className="lg:hidden">ready</span>
+                  <span className="lg:hidden">{t.ready}</span>
                 </Badge>
                 {selectedDocumentIds.length > 0 ? (
                   <Badge variant="outline" className="gap-1">
                     <span>{selectedDocumentIds.length}</span>
-                    <span className="lg:hidden">selected</span>
+                    <span className="lg:hidden">{t.selected}</span>
                   </Badge>
                 ) : null}
                 {isAuthenticated ? (
                   <Badge variant="outline" className="gap-1">
                     <MessageSquare className="h-3 w-3" />
                     <span>{visibleChats.length}</span>
-                    <span className="lg:hidden">chats</span>
+                    <span className="lg:hidden">{t.chats}</span>
                   </Badge>
                 ) : null}
               </div>
@@ -1191,18 +1218,18 @@ export function RagWorkspace() {
                 <form onSubmit={handleUpload} className="animate-panel-in space-y-4">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
-                      <h2 className="text-sm font-semibold">Documents</h2>
+                      <h2 className="text-sm font-semibold">{t.documents}</h2>
                       <Badge variant="secondary">
-                        {readyDocuments.length} ready
+                        {readyDocuments.length} {t.ready}
                       </Badge>
                     </div>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      aria-label="Collapse document menu"
+                      aria-label={t.collapseDocuments}
                       aria-expanded
-                      title="Collapse document menu"
+                      title={t.collapseDocuments}
                       onClick={() => setIsSidebarCollapsed(true)}
                     >
                       <PanelLeftClose className="h-4 w-4" />
@@ -1216,28 +1243,28 @@ export function RagWorkspace() {
                     <TabsList className="grid w-full grid-cols-2">
                       <TabsTrigger value="file">
                         <Upload className="mr-2 h-4 w-4" />
-                        Upload
+                        {t.upload}
                       </TabsTrigger>
                       <TabsTrigger value="text">
                         <FileText className="mr-2 h-4 w-4" />
-                        Paste
+                        {t.paste}
                       </TabsTrigger>
                     </TabsList>
 
                     <div className="space-y-2">
-                      <Label htmlFor="document-title">Title</Label>
+                      <Label htmlFor="document-title">{t.title}</Label>
                       <Input
                         id="document-title"
                         value={title}
                         onChange={(event) => setTitle(event.target.value)}
-                        placeholder="Quarterly report"
+                        placeholder={t.titlePlaceholder}
                         disabled={documentControlsDisabled}
                       />
                     </div>
 
                     <TabsContent value="file">
                       <div className="space-y-2">
-                        <Label htmlFor="document-file">File</Label>
+                        <Label htmlFor="document-file">{t.file}</Label>
                         <label
                           htmlFor="document-file"
                           className={cn(
@@ -1251,12 +1278,12 @@ export function RagWorkspace() {
                           </span>
                           <span className="min-w-0 flex-1">
                             <span className="block font-medium">
-                              {file ? "Change file" : "Select file"}
+                              {file ? t.changeFile : t.selectFile}
                             </span>
                             <span className="block truncate text-xs text-muted-foreground">
                               {file
                                 ? `${file.name} - ${formatBytes(file.size)}`
-                                : "PDF or .txt, up to 10 MB"}
+                                : t.fileHint}
                             </span>
                           </span>
                         </label>
@@ -1275,12 +1302,12 @@ export function RagWorkspace() {
 
                     <TabsContent value="text">
                       <div className="space-y-2">
-                        <Label htmlFor="document-text">Text</Label>
+                        <Label htmlFor="document-text">{t.text}</Label>
                         <Textarea
                           id="document-text"
                           value={pastedText}
                           onChange={(event) => setPastedText(event.target.value)}
-                          placeholder="Paste document text here"
+                          placeholder={t.textPlaceholder}
                           disabled={documentControlsDisabled}
                         />
                       </div>
@@ -1299,14 +1326,14 @@ export function RagWorkspace() {
                     ) : (
                       <Database className="h-4 w-4" />
                     )}
-                    Index document
+                    {t.indexDocument}
                   </Button>
                 </form>
 
                 <Separator className="my-5" />
 
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-sm font-semibold">Indexed files</h2>
+                  <h2 className="text-sm font-semibold">{t.indexedFiles}</h2>
                   <div className="flex items-center gap-1">
                     <Button
                       type="button"
@@ -1315,7 +1342,7 @@ export function RagWorkspace() {
                       disabled={readyDocuments.length === 0}
                       onClick={selectAllReadyDocuments}
                     >
-                      Select all
+                      {t.selectAll}
                     </Button>
                     <Button
                       type="button"
@@ -1324,7 +1351,7 @@ export function RagWorkspace() {
                       disabled={selectedDocumentIds.length === 0}
                       onClick={clearDocumentSelection}
                     >
-                      Clear
+                      {t.clear}
                     </Button>
                   </div>
                 </div>
@@ -1339,13 +1366,13 @@ export function RagWorkspace() {
                     {loadingDocuments ? (
                       <DocumentState
                         icon={Loader2}
-                        text="Loading documents"
+                        text={t.loadingDocuments}
                         spin
                       />
                     ) : documents.length === 0 ? (
                       <DocumentState
                         icon={FileText}
-                        text="No documents indexed"
+                        text={t.noDocuments}
                       />
                     ) : (
                       visibleDocuments.map((document) => (
@@ -1355,7 +1382,7 @@ export function RagWorkspace() {
                         >
                           <div className="flex items-start gap-3">
                             <input
-                              aria-label={`Select ${document.title}`}
+                              aria-label={`${t.selectAll} ${document.title}`}
                               type="checkbox"
                               checked={selectedDocumentIds.includes(
                                 document.id,
@@ -1372,9 +1399,16 @@ export function RagWorkspace() {
                                 <Badge variant="outline">
                                   {document.source_type.toUpperCase()}
                                 </Badge>
-                                <StatusBadge status={document.status} />
+                                <StatusBadge
+                                  status={document.status}
+                                  labels={{
+                                    ready: t.statusReady,
+                                    failed: t.statusFailed,
+                                    indexing: t.statusIndexing,
+                                  }}
+                                />
                                 <span className="text-xs text-muted-foreground">
-                                  {document.chunk_count} chunks
+                                  {document.chunk_count} {t.chunks}
                                 </span>
                               </div>
                               {document.error_message ? (
@@ -1387,7 +1421,7 @@ export function RagWorkspace() {
                               type="button"
                               variant="ghost"
                               size="icon"
-                              title={`Delete ${document.title}`}
+                              title={`${copy.common.delete} ${document.title}`}
                               disabled={deletingId === document.id}
                               onClick={() => void handleDelete(document.id)}
                             >
@@ -1418,8 +1452,8 @@ export function RagWorkspace() {
                       )}
                     />
                     {isDocumentsExpanded
-                      ? "Show fewer documents"
-                      : `Show more documents (${hiddenDocumentCount})`}
+                      ? t.showFewerDocuments
+                      : `${t.showMoreDocuments} (${hiddenDocumentCount})`}
                   </Button>
                 ) : null}
 
@@ -1428,11 +1462,11 @@ export function RagWorkspace() {
                 <section className="animate-panel-in min-h-0 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <h2 className="text-sm font-semibold">Chats</h2>
+                      <h2 className="text-sm font-semibold">{t.chatsTitle}</h2>
                       <p className="text-xs text-muted-foreground">
                         {isAuthenticated
-                          ? (activeFolder?.name ?? "No folder selected")
-                          : "Temporary guest chat"}
+                          ? (activeFolder?.name ?? t.noFolderSelected)
+                          : t.temporaryGuestChat}
                       </p>
                     </div>
                     {isAuthenticated ? (
@@ -1444,7 +1478,7 @@ export function RagWorkspace() {
                         onClick={() => void handleCreateChat()}
                       >
                         <Plus className="h-4 w-4" />
-                        New
+                        {t.newChat}
                       </Button>
                     ) : null}
                   </div>
@@ -1461,11 +1495,11 @@ export function RagWorkspace() {
                         {loadingWorkspace ? (
                           <DocumentState
                             icon={Loader2}
-                            text="Loading chats"
+                            text={t.loadingChats}
                             spin
                           />
                         ) : visibleChats.length === 0 ? (
-                          <DocumentState icon={MessageSquare} text="No chats yet" />
+                          <DocumentState icon={MessageSquare} text={t.noChats} />
                         ) : (
                           visibleSidebarChats.map((chat) => (
                             <div
@@ -1484,13 +1518,15 @@ export function RagWorkspace() {
                                   onClick={() => handleOpenChat(chat)}
                                 >
                                   <MessageSquare className="h-4 w-4 shrink-0" />
-                                  <span className="truncate">{chat.title}</span>
+                                  <span className="truncate">
+                                    {getChatDisplayTitle(chat.title, t.newChatTitle)}
+                                  </span>
                                 </Button>
                                 <Button
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  title={`Rename ${chat.title}`}
+                                  title={`${copy.common.edit} ${chat.title}`}
                                   onClick={() => void handleRenameChat(chat)}
                                 >
                                   <Pencil className="h-3.5 w-3.5" />
@@ -1499,7 +1535,7 @@ export function RagWorkspace() {
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  title={`Delete ${chat.title}`}
+                                  title={`${copy.common.delete} ${chat.title}`}
                                   onClick={() => void handleDeleteChat(chat)}
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -1525,15 +1561,14 @@ export function RagWorkspace() {
                           )}
                         />
                         {isChatsExpanded
-                          ? "Show fewer chats"
-                          : `Show more chats (${hiddenChatCount})`}
+                          ? t.showFewerChats
+                          : `${t.showMoreChats} (${hiddenChatCount})`}
                       </Button>
                     ) : null}
                     </>
                   ) : (
                     <div className="rounded-2xl border border-border/80 bg-background/65 p-3 text-xs leading-5 text-muted-foreground shadow-sm">
-                      Guest chats stay temporary. Sign in from the top-right
-                      account button to save chats and history.
+                      {t.guestChatNotice}
                     </div>
                   )}
                 </section>
@@ -1547,20 +1582,22 @@ export function RagWorkspace() {
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="text-xl font-semibold tracking-tight">
-                  {activeChat?.title ?? "Ask your documents"}
+                  {activeChat
+                    ? getChatDisplayTitle(activeChat.title, t.newChatTitle)
+                    : t.askDocuments}
                 </h2>
                 <p className="text-sm text-muted-foreground">
                   {selectedDocumentIds.length > 0
-                    ? `${selectedDocumentIds.length} selected`
+                    ? `${selectedDocumentIds.length} ${t.selected}`
                     : readyDocuments.length > 0
-                      ? "Select documents to ask from"
+                      ? t.selectDocuments
                       : isAuthenticated
-                        ? "No folder documents yet"
-                        : "No context loaded yet"}
+                        ? t.noFolderDocuments
+                        : t.noContext}
                 </p>
               </div>
               <Badge variant="secondary" className="self-start md:self-auto">
-                {isAuthenticated ? "Saved workspace" : "Guest workspace"}
+                {isAuthenticated ? t.savedWorkspace : t.guestWorkspace}
               </Badge>
             </div>
           </header>
@@ -1586,9 +1623,9 @@ export function RagWorkspace() {
                   <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary text-accent-foreground shadow-sm">
                     <MessageSquare className="h-6 w-6" />
                   </div>
-                  <p className="text-sm font-medium">No questions yet</p>
+                  <p className="text-sm font-medium">{t.noQuestions}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Indexed answers will appear here.
+                    {t.emptyAnswers}
                   </p>
                 </div>
               ) : (
@@ -1643,7 +1680,7 @@ export function RagWorkspace() {
                             <details className="group mt-4 rounded-2xl border border-border/80 bg-background/55 shadow-sm transition-all duration-200 open:bg-background/75">
                               <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
                                 <Quote className="h-4 w-4 text-accent-foreground" />
-                                View references ({turn.citations.length})
+                                {t.viewReferences} ({turn.citations.length})
                                 <ChevronDown className="ml-auto h-4 w-4 transition-transform duration-200 group-open:rotate-180" />
                               </summary>
                               <div className="references-panel grid gap-3 border-t border-border/80 p-3 md:grid-cols-2">
@@ -1664,8 +1701,8 @@ export function RagWorkspace() {
                                         </div>
                                         <p className="mt-1 text-xs text-muted-foreground">
                                           {citation.pageNumber
-                                            ? `Page ${citation.pageNumber} - Block ${citation.chunkIndex + 1}`
-                                            : `Text block ${citation.chunkIndex + 1}`}
+                                            ? `${t.page} ${citation.pageNumber} - ${t.block} ${citation.chunkIndex + 1}`
+                                            : `${t.textBlock} ${citation.chunkIndex + 1}`}
                                         </p>
                                       </div>
                                     </div>
@@ -1685,7 +1722,7 @@ export function RagWorkspace() {
                       <div className="animate-message-in mr-auto rounded-3xl rounded-bl-lg border border-border/80 bg-card/80 p-4 shadow-[var(--shadow-subtle)]">
                         <div className="flex items-center gap-3 text-sm text-muted-foreground">
                           <Loader2 className="h-4 w-4 animate-spin text-accent-foreground" />
-                          Retrieving context and drafting an answer
+                          {t.retrieving}
                         </div>
                       </div>
                     ) : null}
@@ -1701,7 +1738,7 @@ export function RagWorkspace() {
                 className={cn("shrink-0 space-y-3", !isInitialChat && "mt-4")}
               >
                 <section
-                  aria-label="Chat composer"
+                  aria-label={t.composerLabel}
                   onDragEnter={handleChatDragEnter}
                   onDragOver={handleChatDragOver}
                   onDragLeave={handleChatDragLeave}
@@ -1718,7 +1755,7 @@ export function RagWorkspace() {
                     onChange={(event) => setQuestion(event.target.value)}
                     onKeyDown={handleQuestionKeyDown}
                     onPaste={handleQuestionPaste}
-                    placeholder="Ask about your documents or paste a PDF/text context"
+                    placeholder={t.composerPlaceholder}
                     className="min-h-32 border-0 bg-transparent pb-14 pl-11 pr-28 shadow-none focus-visible:ring-0"
                     disabled={
                       asking ||
@@ -1729,7 +1766,7 @@ export function RagWorkspace() {
                   {uploadingChatAttachment ? (
                     <div className="absolute bottom-4 left-4 flex items-center gap-2 text-xs text-muted-foreground">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-foreground" />
-                      Indexing context
+                      {t.indexingContext}
                     </div>
                   ) : null}
                   <Button
@@ -1742,11 +1779,11 @@ export function RagWorkspace() {
                     ) : (
                       <Send className="h-4 w-4" />
                     )}
-                    Ask
+                    {t.ask}
                   </Button>
                   {draggingChatFile ? (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-3xl bg-background/85 text-sm font-medium text-foreground backdrop-blur-sm">
-                      Drop PDF to add it to this folder
+                      {t.dropPdf}
                     </div>
                   ) : null}
                 </section>
@@ -1760,16 +1797,22 @@ export function RagWorkspace() {
   );
 }
 
-function StatusBadge({ status }: { status: DocumentItem["status"] }) {
+function StatusBadge({
+  status,
+  labels,
+}: {
+  status: DocumentItem["status"];
+  labels: { ready: string; failed: string; indexing: string };
+}) {
   if (status === "ready") {
-    return <Badge>Ready</Badge>;
+    return <Badge>{labels.ready}</Badge>;
   }
 
   if (status === "failed") {
-    return <Badge variant="destructive">Failed</Badge>;
+    return <Badge variant="destructive">{labels.failed}</Badge>;
   }
 
-  return <Badge variant="secondary">Indexing</Badge>;
+  return <Badge variant="secondary">{labels.indexing}</Badge>;
 }
 
 function InlineMessage({
@@ -1848,11 +1891,15 @@ function CopyMessageButton({
   );
 }
 
-function getAccountLabel(profile: ProfileItem | null, user: AuthUser | null) {
+function getAccountLabel(
+  profile: ProfileItem | null,
+  user: AuthUser | null,
+  fallback: string,
+) {
   const name = profile?.full_name.trim();
   if (name) return name;
   if (user?.email) return user.email;
-  return "Account";
+  return fallback;
 }
 
 async function readPayload<T = unknown>(response: Response): Promise<T> {
@@ -1872,6 +1919,10 @@ function getClientError(error: unknown) {
 function createLocalChatTitle(question: string) {
   const title = question.replace(/\s+/g, " ").trim();
   return title.slice(0, 70) || "New chat";
+}
+
+function getChatDisplayTitle(title: string, fallback: string) {
+  return title === "New chat" ? fallback : title;
 }
 
 function isPdfFile(file: File) {

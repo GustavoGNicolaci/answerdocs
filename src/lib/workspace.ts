@@ -1,8 +1,11 @@
 import { notFound } from "@/lib/errors";
+import type { InterfaceLanguage } from "@/lib/interface-language";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import type { Citation, ResponseLanguage } from "@/lib/types";
 
 type SupabaseAdmin = ReturnType<typeof getSupabaseAdmin>;
+const PROFILE_COLUMNS =
+  "id,full_name,email,created_at,updated_at,interface_language";
 
 export type ProfileRecord = {
   id: string;
@@ -10,6 +13,7 @@ export type ProfileRecord = {
   email: string | null;
   created_at: string;
   updated_at: string;
+  interface_language: InterfaceLanguage;
 };
 
 export type FolderRecord = {
@@ -65,7 +69,7 @@ export async function ensureProfile(
   const cleanName = sanitizeName(fullName);
   const { data: existing, error: existingError } = await supabase
     .from("profiles")
-    .select("id,full_name,email,created_at,updated_at")
+    .select(PROFILE_COLUMNS)
     .eq("id", user.id)
     .maybeSingle();
 
@@ -80,7 +84,7 @@ export async function ensureProfile(
         updated_at: new Date().toISOString(),
       })
       .eq("id", user.id)
-      .select("id,full_name,email,created_at,updated_at")
+      .select(PROFILE_COLUMNS)
       .single();
 
     if (error) throw error;
@@ -94,7 +98,7 @@ export async function ensureProfile(
       email: user.email,
       full_name: cleanName,
     })
-    .select("id,full_name,email,created_at,updated_at")
+    .select(PROFILE_COLUMNS)
     .single();
 
   if (error) throw error;

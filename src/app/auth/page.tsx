@@ -11,6 +11,7 @@ import {
   Plus,
   Sparkles,
 } from "lucide-react";
+import { useInterfaceLanguage } from "@/components/interface-language-provider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ type AuthMode = "login" | "signup";
 
 export default function AuthPage() {
   const router = useRouter();
+  const { language, copy } = useInterfaceLanguage();
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -37,7 +39,7 @@ export default function AuthPage() {
     setError(null);
 
     if (mode === "signup" && password !== confirmPassword) {
-      setError("Passwords do not match.");
+      setError(copy.auth.passwordsDoNotMatch);
       setLoading(false);
       return;
     }
@@ -62,7 +64,7 @@ export default function AuthPage() {
       };
 
       if (!response.ok) {
-        throw new Error(payload.error || "Authentication failed.");
+        throw new Error(payload.error || copy.auth.authFailed);
       }
 
       setPassword("");
@@ -71,15 +73,15 @@ export default function AuthPage() {
       if (payload.needsConfirmation) {
         setMessage(
           payload.message ??
-            "Account created. Check your email if confirmation is enabled.",
+            copy.auth.confirmation,
         );
         return;
       }
 
-      router.replace("/");
+      router.replace(getSafeNextPath());
       router.refresh();
     } catch (requestError) {
-      setError(getFriendlyAuthError(requestError));
+      setError(getFriendlyAuthError(requestError, language));
     } finally {
       setLoading(false);
     }
@@ -94,25 +96,27 @@ export default function AuthPage() {
             className="inline-flex items-center gap-2 rounded-2xl px-2 py-2 text-sm text-muted-foreground outline-none transition-colors hover:bg-secondary/70 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to chat
+            {copy.common.backToChat}
           </Link>
           <div className="flex items-center gap-2 text-sm font-semibold">
             <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
               <Sparkles className="h-4 w-4" />
             </span>
-            AnswerDocs
+            {copy.common.answerDocs}
           </div>
         </div>
 
         <Card className="animate-panel-in border-border/80 bg-card/90 p-5 shadow-[var(--shadow-soft)]">
           <div className="mb-5">
             <h1 className="text-2xl font-semibold tracking-tight">
-              {mode === "login" ? "Welcome back" : "Create your account"}
+              {mode === "login"
+                ? copy.auth.welcomeBack
+                : copy.auth.createAccount}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {mode === "login"
-                ? "Sign in to keep folders, chats, documents, and history saved."
-                : "Start saving your workspace across folders and chats."}
+                ? copy.auth.loginSummary
+                : copy.auth.signupSummary}
             </p>
           </div>
 
@@ -120,11 +124,11 @@ export default function AuthPage() {
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="login">
                 <LogIn className="mr-2 h-4 w-4" />
-                Login
+                {copy.auth.login}
               </TabsTrigger>
               <TabsTrigger value="signup">
                 <Plus className="mr-2 h-4 w-4" />
-                Create account
+                {copy.auth.createAccount}
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -132,12 +136,12 @@ export default function AuthPage() {
           <form onSubmit={handleSubmit} className="mt-5 space-y-4">
             {mode === "signup" ? (
               <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
+                <Label htmlFor="name">{copy.common.name}</Label>
                 <Input
                   id="name"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="Your name"
+                  placeholder={copy.auth.namePlaceholder}
                   autoComplete="name"
                   disabled={loading}
                   required
@@ -146,12 +150,12 @@ export default function AuthPage() {
             ) : null}
 
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{copy.common.email}</Label>
               <Input
                 id="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
+                placeholder={copy.auth.emailPlaceholder}
                 type="email"
                 autoComplete="email"
                 disabled={loading}
@@ -160,12 +164,12 @@ export default function AuthPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{copy.common.password}</Label>
               <Input
                 id="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="Your password"
+                placeholder={copy.auth.passwordPlaceholder}
                 type="password"
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
                 disabled={loading}
@@ -176,12 +180,14 @@ export default function AuthPage() {
 
             {mode === "signup" ? (
               <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm password</Label>
+                <Label htmlFor="confirm-password">
+                  {copy.auth.confirmPassword}
+                </Label>
                 <Input
                   id="confirm-password"
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
-                  placeholder="Repeat your password"
+                  placeholder={copy.auth.confirmPasswordPlaceholder}
                   type="password"
                   autoComplete="new-password"
                   disabled={loading}
@@ -212,7 +218,7 @@ export default function AuthPage() {
               ) : (
                 <Plus className="h-4 w-4" />
               )}
-              {mode === "login" ? "Login" : "Create account"}
+              {mode === "login" ? copy.auth.login : copy.auth.createAccount}
             </Button>
           </form>
         </Card>
@@ -221,29 +227,56 @@ export default function AuthPage() {
   );
 }
 
-function getFriendlyAuthError(error: unknown) {
+function getSafeNextPath() {
+  const params = new URLSearchParams(window.location.search);
+  const next = params.get("next");
+
+  if (next?.startsWith("/") && !next.startsWith("//")) {
+    return next;
+  }
+
+  return "/";
+}
+
+function getFriendlyAuthError(
+  error: unknown,
+  language: "en" | "pt",
+) {
   const message =
     error instanceof Error ? error.message : "Could not complete this request.";
   const normalized = message.toLowerCase();
 
   if (normalized.includes("invalid login")) {
-    return "Email or password is incorrect.";
+    return language === "pt"
+      ? "E-mail ou senha incorretos."
+      : "Email or password is incorrect.";
   }
 
   if (
     normalized.includes("already registered") ||
     normalized.includes("already exists")
   ) {
-    return "An account with this email already exists.";
+    return language === "pt"
+      ? "Já existe uma conta com este e-mail."
+      : "An account with this email already exists.";
   }
 
   if (normalized.includes("password")) {
-    return "Check your password and try again.";
+    return language === "pt"
+      ? "Verifique sua senha e tente novamente."
+      : "Check your password and try again.";
   }
 
   if (normalized.includes("email")) {
-    return "Check your email address and try again.";
+    return language === "pt"
+      ? "Verifique seu e-mail e tente novamente."
+      : "Check your email address and try again.";
   }
 
-  return message || "Could not complete this request.";
+  return (
+    message ||
+    (language === "pt"
+      ? "Não foi possível concluir esta solicitação."
+      : "Could not complete this request.")
+  );
 }
