@@ -50,6 +50,32 @@ export const INTERFACE_COPY = {
       passwordPlaceholder: "Your password",
       confirmPassword: "Confirm password",
       confirmPasswordPlaceholder: "Repeat your password",
+      forgotPassword: "Forgot password?",
+      forgotPasswordTitle: "Reset your password",
+      forgotPasswordSummary:
+        "Enter your account email and we will send a recovery link.",
+      sendResetLink: "Send reset link",
+      sendingResetLink: "Sending link",
+      resetLinkSent:
+        "If this email is registered, we will send a reset link.",
+      backToLogin: "Back to login",
+      requestNewResetLink: "Request a new link",
+      resetPasswordTitle: "Set a new password",
+      resetPasswordSummary: "Choose a new password for your account.",
+      resetPasswordReady:
+        "Your recovery link is ready. Set a new password below.",
+      resetPasswordInvalid:
+        "This reset link is invalid or expired. Request a new one.",
+      newPassword: "New password",
+      newPasswordPlaceholder: "At least 6 characters",
+      updatePassword: "Update password",
+      updatingPassword: "Updating password",
+      resetPasswordSuccess:
+        "Password reset successfully. Redirecting to login.",
+      invalidEmail: "Enter a valid email address.",
+      passwordRequirement: "Use at least 6 characters.",
+      resetPasswordFailed:
+        "Could not reset your password. Open the reset link again.",
       passwordsDoNotMatch: "Passwords do not match.",
       authFailed: "Authentication failed.",
       confirmation:
@@ -230,6 +256,32 @@ export const INTERFACE_COPY = {
       passwordPlaceholder: "Sua senha",
       confirmPassword: "Confirmar senha",
       confirmPasswordPlaceholder: "Repita sua senha",
+      forgotPassword: "Esqueceu a senha?",
+      forgotPasswordTitle: "Redefinir sua senha",
+      forgotPasswordSummary:
+        "Informe o e-mail da sua conta e enviaremos um link de recuperação.",
+      sendResetLink: "Enviar link de recuperação",
+      sendingResetLink: "Enviando link",
+      resetLinkSent:
+        "Se este e-mail estiver cadastrado, enviaremos um link para redefinir sua senha.",
+      backToLogin: "Voltar ao login",
+      requestNewResetLink: "Solicitar novo link",
+      resetPasswordTitle: "Definir nova senha",
+      resetPasswordSummary: "Escolha uma nova senha para sua conta.",
+      resetPasswordReady:
+        "Seu link de recuperação está pronto. Defina uma nova senha abaixo.",
+      resetPasswordInvalid:
+        "Este link de redefinição é inválido ou expirou. Solicite um novo.",
+      newPassword: "Nova senha",
+      newPasswordPlaceholder: "Pelo menos 6 caracteres",
+      updatePassword: "Atualizar senha",
+      updatingPassword: "Atualizando senha",
+      resetPasswordSuccess:
+        "Senha redefinida com sucesso. Redirecionando para o login.",
+      invalidEmail: "Informe um e-mail válido.",
+      passwordRequirement: "Use pelo menos 6 caracteres.",
+      resetPasswordFailed:
+        "Não foi possível redefinir sua senha. Abra o link de redefinição novamente.",
       passwordsDoNotMatch: "As senhas não coincidem.",
       authFailed: "Falha na autenticação.",
       confirmation:

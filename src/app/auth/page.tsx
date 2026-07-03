@@ -176,6 +176,16 @@ export default function AuthPage() {
                 required
                 minLength={mode === "signup" ? 6 : undefined}
               />
+              {mode === "login" ? (
+                <div className="flex justify-end">
+                  <Link
+                    href="/auth/forgot-password"
+                    className="text-xs font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                  >
+                    {copy.auth.forgotPassword}
+                  </Link>
+                </div>
+              ) : null}
             </div>
 
             {mode === "signup" ? (
