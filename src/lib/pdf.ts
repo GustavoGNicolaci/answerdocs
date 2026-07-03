@@ -1,4 +1,5 @@
 import { PDF_OCR_PAGE_TEXT_MIN_CHARACTERS } from "@/lib/constants";
+import { configurationError } from "@/lib/errors";
 import { extractPdfOcrPages } from "@/lib/pdf-ocr";
 import { normalizeText, toPlainText } from "@/lib/text";
 import type { SourceExtractionMethod, SourcePage } from "@/lib/types";
@@ -75,6 +76,8 @@ export async function extractPdfDocument(
 }
 
 export async function extractPdfPages(buffer: Buffer): Promise<SourcePage[]> {
+  await ensurePdfCanvasPolyfills();
+
   const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: buffer });
 
@@ -183,6 +186,30 @@ function getExtractionMethod(
 
 function countReadableCharacters(value: string) {
   return toPlainText(value).replace(/\s/g, "").length;
+}
+
+async function ensurePdfCanvasPolyfills() {
+  const globals = globalThis as typeof globalThis & {
+    DOMMatrix?: typeof DOMMatrix;
+    Path2D?: typeof Path2D;
+    ImageData?: typeof ImageData;
+  };
+
+  if (globals.DOMMatrix && globals.Path2D && globals.ImageData) {
+    return;
+  }
+
+  try {
+    const canvas = await import("@napi-rs/canvas");
+
+    globals.DOMMatrix ??= canvas.DOMMatrix as unknown as typeof DOMMatrix;
+    globals.Path2D ??= canvas.Path2D as unknown as typeof Path2D;
+    globals.ImageData ??= canvas.ImageData as unknown as typeof ImageData;
+  } catch (error) {
+    throw configurationError(
+      `Could not load PDF canvas support: ${getOcrErrorMessage(error)}`,
+    );
+  }
 }
 
 function getOcrErrorMessage(error: unknown) {
