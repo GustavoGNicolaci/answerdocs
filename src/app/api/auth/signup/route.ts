@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildEmailConfirmationRedirectUrl } from "@/lib/auth-redirect";
 import { badRequest, toResponseError } from "@/lib/errors";
 import { createSupabaseServerClient } from "@/lib/supabase-auth";
 import { getSupabaseAdmin } from "@/lib/supabase";
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
   try {
     const body = signupSchema.parse(await request.json());
     const supabase = await createSupabaseServerClient();
-    const redirectTo = new URL("/auth/confirm", request.url).toString();
+    const redirectTo = buildEmailConfirmationRedirectUrl(request);
 
     const { data, error } = await supabase.auth.signUp({
       email: body.email,
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
       needsConfirmation: !data.session,
       message: data.session
         ? "Account created."
-        : "Account created. Check your email if confirmation is enabled.",
+        : "Account created successfully! We sent you a confirmation email. Please check your inbox to activate your account.",
     });
   } catch (error) {
     return toResponseError(error);

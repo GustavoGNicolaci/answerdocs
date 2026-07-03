@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type AuthMode = "login" | "signup";
+type AuthNotice = "confirmed" | "confirm-error" | null;
 
 export default function AuthPage() {
   const router = useRouter();
@@ -31,12 +32,29 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<AuthNotice>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const auth = params.get("auth");
+
+      if (auth === "confirmed" || params.get("verified") === "1") {
+        setAuthNotice("confirmed");
+      } else if (auth === "confirm-error" || auth === "error") {
+        setAuthNotice("confirm-error");
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setMessage(null);
     setError(null);
+    setAuthNotice(null);
 
     if (mode === "signup" && password !== confirmPassword) {
       setError(copy.auth.passwordsDoNotMatch);
@@ -71,10 +89,7 @@ export default function AuthPage() {
       setConfirmPassword("");
 
       if (payload.needsConfirmation) {
-        setMessage(
-          payload.message ??
-            copy.auth.confirmation,
-        );
+        setMessage(copy.auth.confirmation);
         return;
       }
 
@@ -213,16 +228,16 @@ export default function AuthPage() {
               </div>
             ) : null}
 
-            {error ? (
+            {error || authNotice === "confirm-error" ? (
               <p className="flex items-center gap-2 rounded-2xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4" />
-                {error}
+                {error ?? copy.auth.emailVerificationFailed}
               </p>
             ) : null}
 
-            {message ? (
+            {message || authNotice === "confirmed" ? (
               <p className="rounded-2xl border border-border/80 bg-secondary/70 px-3 py-2 text-sm text-muted-foreground">
-                {message}
+                {message ?? copy.auth.emailVerified}
               </p>
             ) : null}
 

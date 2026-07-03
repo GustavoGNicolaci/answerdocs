@@ -79,7 +79,11 @@ export const INTERFACE_COPY = {
       passwordsDoNotMatch: "Passwords do not match.",
       authFailed: "Authentication failed.",
       confirmation:
-        "Account created. Check your email if confirmation is enabled.",
+        "Account created successfully! We sent you a confirmation email. Please check your inbox to activate your account.",
+      emailVerified:
+        "Email verified successfully. Sign in to continue.",
+      emailVerificationFailed:
+        "We could not confirm this email link. Try signing in or request a new confirmation email.",
       incorrectLogin: "Email or password is incorrect.",
       existingAccount: "An account with this email already exists.",
       passwordCheck: "Check your password and try again.",
@@ -288,7 +292,11 @@ export const INTERFACE_COPY = {
       passwordsDoNotMatch: "As senhas não coincidem.",
       authFailed: "Falha na autenticação.",
       confirmation:
-        "Conta criada. Verifique seu e-mail se a confirmação estiver ativa.",
+        "Conta criada com sucesso! Enviamos um e-mail de confirmação. Verifique sua caixa de entrada para ativar sua conta.",
+      emailVerified:
+        "E-mail verificado com sucesso. Entre para continuar.",
+      emailVerificationFailed:
+        "Não foi possível confirmar este link de e-mail. Tente entrar ou solicite uma nova confirmação.",
       incorrectLogin: "E-mail ou senha incorretos.",
       existingAccount: "Já existe uma conta com este e-mail.",
       passwordCheck: "Verifique sua senha e tente novamente.",

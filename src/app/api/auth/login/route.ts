@@ -23,9 +23,6 @@ export async function POST(request: Request) {
     await ensureProfile(
       getSupabaseAdmin(),
       { id: data.user.id, email: data.user.email ?? body.email },
-      typeof data.user.user_metadata.full_name === "string"
-        ? data.user.user_metadata.full_name
-        : "",
     );
 
     return Response.json({

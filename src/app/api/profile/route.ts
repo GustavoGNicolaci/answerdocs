@@ -77,6 +77,15 @@ export async function PATCH(request: Request) {
 
     if (error) throw new Error("Could not update profile.");
 
+    if (update.full_name !== undefined) {
+      const authClient = await createSupabaseServerClient();
+      const { error: metadataError } = await authClient.auth.updateUser({
+        data: { full_name: data.full_name },
+      });
+
+      if (metadataError) throw new Error("Could not update profile.");
+    }
+
     return Response.json({ profile: data });
   } catch (error) {
     return toResponseError(error);

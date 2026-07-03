@@ -43,8 +43,13 @@ const profile = {
 };
 
 describe("profile route", () => {
+  const signOut = vi.fn();
+  const updateUser = vi.fn();
+
   beforeEach(() => {
     vi.resetAllMocks();
+    signOut.mockResolvedValue({ error: null });
+    updateUser.mockResolvedValue({ error: null });
     vi.mocked(requireAuthenticatedUser).mockResolvedValue({
       id: userId,
       email: "user@example.com",
@@ -53,7 +58,8 @@ describe("profile route", () => {
     vi.mocked(verifyCurrentPassword).mockResolvedValue(undefined);
     vi.mocked(createSupabaseServerClient).mockResolvedValue({
       auth: {
-        signOut: vi.fn().mockResolvedValue({ error: null }),
+        signOut,
+        updateUser,
       },
     } as never);
   });
@@ -116,6 +122,9 @@ describe("profile route", () => {
       }),
     );
     expect(eq).toHaveBeenCalledWith("id", userId);
+    expect(updateUser).toHaveBeenCalledWith({
+      data: { full_name: "Gus" },
+    });
   });
 
   it("requires typed confirmation before deleting the account", async () => {

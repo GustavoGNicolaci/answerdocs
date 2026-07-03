@@ -80,7 +80,6 @@ export async function ensureProfile(
       .from("profiles")
       .update({
         email: user.email,
-        full_name: cleanName || existing.full_name,
         updated_at: new Date().toISOString(),
       })
       .eq("id", user.id)
