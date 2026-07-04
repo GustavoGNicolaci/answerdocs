@@ -50,6 +50,8 @@ export const INTERFACE_COPY = {
       passwordPlaceholder: "Your password",
       confirmPassword: "Confirm password",
       confirmPasswordPlaceholder: "Repeat your password",
+      showPassword: "Show password",
+      hidePassword: "Hide password",
       forgotPassword: "Forgot password?",
       forgotPasswordTitle: "Reset your password",
       forgotPasswordSummary:
@@ -272,6 +274,8 @@ export const INTERFACE_COPY = {
       passwordPlaceholder: "Sua senha",
       confirmPassword: "Confirmar senha",
       confirmPasswordPlaceholder: "Repita sua senha",
+      showPassword: "Mostrar senha",
+      hidePassword: "Ocultar senha",
       forgotPassword: "Esqueceu a senha?",
       forgotPasswordTitle: "Redefinir sua senha",
       forgotPasswordSummary:
