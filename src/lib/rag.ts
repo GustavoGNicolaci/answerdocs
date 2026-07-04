@@ -72,6 +72,7 @@ export function buildAnswerPrompt(
       return [
         `Source index: ${index + 1}`,
         `Document: ${match.document_title}`,
+        `Source type: ${match.document_source_type}`,
         page,
         `Block: ${match.chunk_index + 1}`,
         "Snippet:",
@@ -177,6 +178,7 @@ export function createCitations(
       chunkId: match.chunk_id,
       documentId: match.document_id,
       documentTitle: match.document_title,
+      sourceType: match.document_source_type,
       pageNumber: match.page_number,
       chunkIndex: match.chunk_index,
       snippet: createFocusedSnippet(match.content, {

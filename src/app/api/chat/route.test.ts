@@ -51,6 +51,7 @@ const matches: MatchDocumentChunk[] = [
     chunk_id: "chunk-1",
     document_id: documentId,
     document_title: "Policy.pdf",
+    document_source_type: "pdf",
     chunk_index: 0,
     page_number: 2,
     content: "Refunds are available within 30 days.",
@@ -60,6 +61,7 @@ const matches: MatchDocumentChunk[] = [
     chunk_id: "chunk-2",
     document_id: "33333333-3333-4333-8333-333333333333",
     document_title: "Handbook.pdf",
+    document_source_type: "pdf",
     chunk_index: 1,
     page_number: null,
     content: "Support requests are answered in two business days.",
@@ -69,6 +71,7 @@ const matches: MatchDocumentChunk[] = [
     chunk_id: "chunk-3",
     document_id: "44444444-4444-4444-8444-444444444444",
     document_title: "Guide.pdf",
+    document_source_type: "pdf",
     chunk_index: 2,
     page_number: 8,
     content: "Enterprise plans include priority onboarding.",
@@ -78,6 +81,7 @@ const matches: MatchDocumentChunk[] = [
     chunk_id: "chunk-4",
     document_id: "55555555-5555-4555-8555-555555555555",
     document_title: "Terms.pdf",
+    document_source_type: "pdf",
     chunk_index: 3,
     page_number: 12,
     content: "Contracts renew annually unless cancelled.",
@@ -200,9 +204,9 @@ describe("chat route", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.answer).toContain("uploading a PDF or .txt file");
-    expect(payload.answer).toContain("dragging a PDF");
-    expect(payload.answer).toContain("pasting a PDF");
+    expect(payload.answer).toContain("uploading a PDF, image, or .txt file");
+    expect(payload.answer).toContain("dragging a document");
+    expect(payload.answer).toContain("pasting a file");
     expect(payload.citations).toEqual([]);
     expect(getSupabaseAdmin).not.toHaveBeenCalled();
     expect(embedText).not.toHaveBeenCalled();

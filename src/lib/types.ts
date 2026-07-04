@@ -1,4 +1,4 @@
-export type SourceType = "pdf" | "text";
+export type SourceType = "pdf" | "text" | "image";
 export type DocumentStatus = "indexing" | "ready" | "failed";
 export type SourceExtractionMethod = "native" | "ocr" | "combined";
 
@@ -40,6 +40,7 @@ export type MatchDocumentChunk = {
   chunk_id: string;
   document_id: string;
   document_title: string;
+  document_source_type: SourceType;
   chunk_index: number;
   page_number: number | null;
   content: string;
@@ -51,6 +52,7 @@ export type Citation = {
   chunkId: string;
   documentId: string;
   documentTitle: string;
+  sourceType?: SourceType;
   pageNumber: number | null;
   chunkIndex: number;
   snippet: string;

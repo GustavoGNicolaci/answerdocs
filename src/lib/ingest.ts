@@ -1,11 +1,19 @@
 import { z } from "zod";
+import {
+  hasSupportedImageExtension,
+  isSupportedImageMimeType,
+  resolveImageMimeType,
+} from "@/lib/document-file-types";
 import { MAX_TEXT_CHARACTERS } from "@/lib/constants";
 import { badRequest } from "@/lib/errors";
+import { extractImageDocument } from "@/lib/image";
 import { extractPdfDocument } from "@/lib/pdf";
 import { parseSessionId, sessionIdSchema } from "@/lib/session";
 import { normalizeText } from "@/lib/text";
 import type { DocumentInput } from "@/lib/types";
 import {
+  MAX_IMAGE_UPLOAD_BYTES,
+  MAX_IMAGE_UPLOAD_MB,
   MAX_UPLOAD_FILE_BYTES,
   MAX_UPLOAD_FILE_MB,
 } from "@/lib/upload-limits";
@@ -62,7 +70,9 @@ export async function parseDocumentInput(
     return createTextInput(pastedText, scope, title);
   }
 
-  throw badRequest("Upload a PDF, upload a text file, or paste text to index.");
+  throw badRequest(
+    "Upload a PDF, image, or text file, or paste text to index.",
+  );
 }
 
 async function parseFileInput(
@@ -70,13 +80,43 @@ async function parseFileInput(
   scope: DocumentInputScope,
   title?: string,
 ): Promise<DocumentInput> {
-  if (file.size > MAX_UPLOAD_FILE_BYTES) {
-    throw badRequest(`Files must be ${MAX_UPLOAD_FILE_MB} MB or smaller.`);
-  }
-
   const filename = sanitizeTitle(file.name);
   const documentTitle = sanitizeTitle(title || filename);
   const lowerName = file.name.toLowerCase();
+  const imageMimeType = resolveImageMimeType({
+    mimeType: file.type,
+    filename: file.name,
+  });
+
+  if (imageMimeType) {
+    if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+      throw badRequest(`Images must be ${MAX_IMAGE_UPLOAD_MB} MB or smaller.`);
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const extraction = await extractImageDocument({
+      buffer,
+      mimeType: imageMimeType,
+      displayName: filename,
+    });
+
+    return {
+      ...scope,
+      title: documentTitle,
+      sourceType: "image",
+      pages: extraction.pages,
+      metadata: {
+        ...extraction.metadata,
+        originalName: filename,
+        size: file.size,
+        mimeType: file.type || imageMimeType,
+      },
+    };
+  }
+
+  if (file.size > MAX_UPLOAD_FILE_BYTES) {
+    throw badRequest(`Files must be ${MAX_UPLOAD_FILE_MB} MB or smaller.`);
+  }
 
   if (file.type === "application/pdf" || lowerName.endsWith(".pdf")) {
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -110,7 +150,15 @@ async function parseFileInput(
     );
   }
 
-  throw badRequest("Only PDF and .txt files are supported.");
+  if (
+    file.type.startsWith("image/") ||
+    isSupportedImageMimeType(file.type) ||
+    hasSupportedImageExtension(file.name)
+  ) {
+    throw badRequest("Only PNG, JPG, JPEG, and WEBP images are supported.");
+  }
+
+  throw badRequest("Only PDF, image, and .txt files are supported.");
 }
 
 function createTextInput(

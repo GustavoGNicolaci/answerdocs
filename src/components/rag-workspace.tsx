@@ -56,9 +56,17 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { LOCALIZED_CHAT_MESSAGES } from "@/lib/constants";
+import {
+  DOCUMENT_FILE_ACCEPT,
+  IMAGE_NO_TEXT_ERROR,
+  resolveImageMimeType,
+} from "@/lib/document-file-types";
 import { detectResponseLanguage } from "@/lib/language";
-import type { ChatContextAction, ResponseLanguage } from "@/lib/types";
-import { isUploadFileTooLarge } from "@/lib/upload-limits";
+import type { ChatContextAction, ResponseLanguage, SourceType } from "@/lib/types";
+import {
+  MAX_IMAGE_UPLOAD_BYTES,
+  isUploadFileTooLarge,
+} from "@/lib/upload-limits";
 import { cn, formatBytes } from "@/lib/utils";
 import { MAX_VOICE_AUDIO_BYTES, MAX_VOICE_RECORDING_SECONDS } from "@/lib/voice-limits";
 import {
@@ -77,7 +85,7 @@ const SIDEBAR_LIST_LIMIT = 2;
 type DocumentItem = {
   id: string;
   title: string;
-  source_type: "pdf" | "text";
+  source_type: SourceType;
   status: "indexing" | "ready" | "failed";
   chunk_count: number;
   error_message: string | null;
@@ -90,6 +98,7 @@ type CitationItem = {
   chunkId: string;
   documentId: string;
   documentTitle: string;
+  sourceType?: SourceType;
   pageNumber: number | null;
   chunkIndex: number;
   snippet: string;
@@ -485,11 +494,26 @@ export function RagWorkspace() {
   }, [isMobileFoldersOpen, isMobileSidebarOpen]);
 
   function validateUploadFileSize(nextFile: File) {
+    if (isImageFile(nextFile)) {
+      if (!isUploadFileTooLarge(nextFile.size, MAX_IMAGE_UPLOAD_BYTES)) {
+        return true;
+      }
+
+      setNotice(null);
+      setError(t.imageTooLarge);
+      return false;
+    }
+
     if (!isUploadFileTooLarge(nextFile.size)) return true;
 
     setNotice(null);
     setError(t.fileTooLarge);
     return false;
+  }
+
+  function getDocumentUploadError(error: unknown) {
+    const message = getClientError(error);
+    return message === IMAGE_NO_TEXT_ERROR ? t.imageNoText : message;
   }
 
   function clearVoiceRecordingTimer() {
@@ -577,7 +601,7 @@ export function RagWorkspace() {
       setTitle("");
       setPastedText("");
     } catch (requestError) {
-      setError(getClientError(requestError));
+      setError(getDocumentUploadError(requestError));
     } finally {
       setUploading(false);
     }
@@ -852,19 +876,12 @@ export function RagWorkspace() {
     setIsMobileSidebarOpen(false);
   }
 
-  async function handleChatDocumentFile(
-    nextFile: File,
-    options: { pdfOnly?: boolean } = {},
-  ) {
+  async function handleChatDocumentFile(nextFile: File) {
     setError(null);
     setNotice(null);
 
-    const unsupportedFile = options.pdfOnly
-      ? !isPdfFile(nextFile)
-      : !isSupportedDocumentFile(nextFile);
-
-    if (unsupportedFile) {
-      setError(options.pdfOnly ? t.attachPdf : t.chooseFile);
+    if (!isSupportedDocumentFile(nextFile)) {
+      setError(t.chooseFile);
       return;
     }
 
@@ -881,14 +898,10 @@ export function RagWorkspace() {
         `${t.addedToFolder} "${uploadedDocument.title}" ${t.addedToFolderSuffix}`,
       );
     } catch (requestError) {
-      setError(getClientError(requestError));
+      setError(getDocumentUploadError(requestError));
     } finally {
       setUploadingChatAttachment(false);
     }
-  }
-
-  async function handleChatPdfFile(nextFile: File) {
-    await handleChatDocumentFile(nextFile, { pdfOnly: true });
   }
 
   function handleContextualUploadClick() {
@@ -1010,17 +1023,17 @@ export function RagWorkspace() {
   function handleQuestionPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
     if (uploadingChatAttachment) return;
 
-    const pastedFile = getPastedPdfFile(event.clipboardData);
+    const pastedFile = getPastedDocumentFile(event.clipboardData);
     if (pastedFile.file) {
       event.preventDefault();
-      void handleChatPdfFile(pastedFile.file);
+      void handleChatDocumentFile(pastedFile.file);
       return;
     }
 
     if (pastedFile.inaccessibleFile) {
       event.preventDefault();
       setNotice(null);
-      setError(t.pastedPdfError);
+      setError(t.pastedFileError);
       return;
     }
 
@@ -1072,13 +1085,13 @@ export function RagWorkspace() {
     event.preventDefault();
     setDraggingChatFile(false);
 
-    const nextFile = [...event.dataTransfer.files].find(isPdfFile);
+    const nextFile = [...event.dataTransfer.files].find(isSupportedDocumentFile);
     if (!nextFile) {
-      setError("Drop a PDF file.");
+      setError(t.chooseFile);
       return;
     }
 
-    void handleChatPdfFile(nextFile);
+    void handleChatDocumentFile(nextFile);
   }
 
   async function persistDocumentSelection(documentId: string, selected: boolean) {
@@ -1550,7 +1563,7 @@ export function RagWorkspace() {
                 <input
                   id={`${idPrefix}-document-file`}
                   type="file"
-                  accept="application/pdf,text/plain,.pdf,.txt"
+                  accept={DOCUMENT_FILE_ACCEPT}
                   disabled={documentControlsDisabled}
                   className="sr-only"
                   onChange={(event) => {
@@ -1587,7 +1600,7 @@ export function RagWorkspace() {
             <div className="space-y-2">
               <Progress value={66} />
               <p className="text-xs text-muted-foreground">
-                {t.indexingContext}
+                {file && isImageFile(file) ? t.indexingImageContext : t.indexingContext}
               </p>
             </div>
           ) : null}
@@ -2131,33 +2144,40 @@ export function RagWorkspace() {
                                 <ChevronDown className="ml-auto h-4 w-4 transition-transform duration-200 group-open:rotate-180" />
                               </summary>
                               <div className="references-panel grid gap-3 border-t border-border/80 p-3 md:grid-cols-2">
-                                {turn.citations.map((citation) => (
-                                  <div
-                                    key={citation.chunkId}
-                                    className="rounded-2xl border border-border/75 bg-card/70 p-3 shadow-sm"
-                                  >
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground">
-                                            {citation.index}
-                                          </span>
-                                          <span className="truncate text-sm font-medium">
-                                            {citation.documentTitle}
-                                          </span>
+                                {turn.citations.map((citation) => {
+                                  const sourceType =
+                                    getCitationSourceType(citation);
+
+                                  return (
+                                    <div
+                                      key={citation.chunkId}
+                                      className="rounded-2xl border border-border/75 bg-card/70 p-3 shadow-sm"
+                                    >
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-2">
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground">
+                                              {citation.index}
+                                            </span>
+                                            <span className="truncate text-sm font-medium">
+                                              {citation.documentTitle}
+                                            </span>
+                                          </div>
+                                          <p className="mt-1 text-xs text-muted-foreground">
+                                            {sourceType === "image"
+                                              ? `${t.imageTextBlock} ${citation.chunkIndex + 1}`
+                                              : citation.pageNumber
+                                                ? `${t.page} ${citation.pageNumber} - ${t.block} ${citation.chunkIndex + 1}`
+                                                : `${t.textBlock} ${citation.chunkIndex + 1}`}
+                                          </p>
                                         </div>
-                                        <p className="mt-1 text-xs text-muted-foreground">
-                                          {citation.pageNumber
-                                            ? `${t.page} ${citation.pageNumber} - ${t.block} ${citation.chunkIndex + 1}`
-                                            : `${t.textBlock} ${citation.chunkIndex + 1}`}
-                                        </p>
                                       </div>
+                                      <p className="mt-3 max-h-44 overflow-y-auto whitespace-pre-wrap pr-2 text-xs leading-5 text-muted-foreground">
+                                        {citation.snippet}
+                                      </p>
                                     </div>
-                                    <p className="mt-3 max-h-44 overflow-y-auto whitespace-pre-wrap pr-2 text-xs leading-5 text-muted-foreground">
-                                      {citation.snippet}
-                                    </p>
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             </details>
                           ) : null}
@@ -2283,14 +2303,14 @@ export function RagWorkspace() {
                   </div>
                   {draggingChatFile ? (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-3xl bg-background/85 text-sm font-medium text-foreground backdrop-blur-sm">
-                      {t.dropPdf}
+                      {t.dropDocument}
                     </div>
                   ) : null}
                 </section>
                 <input
                   ref={contextualUploadInputRef}
                   type="file"
-                  accept="application/pdf,text/plain,.pdf,.txt"
+                  accept={DOCUMENT_FILE_ACCEPT}
                   disabled={documentControlsDisabled || uploadingChatAttachment}
                   className="sr-only"
                   onChange={handleContextualUploadChange}
@@ -2433,6 +2453,15 @@ function getChatDisplayTitle(title: string, fallback: string) {
   return title === "New chat" ? fallback : title;
 }
 
+function getCitationSourceType(citation: CitationItem): SourceType {
+  if (citation.sourceType) return citation.sourceType;
+  return resolveImageMimeType({
+    filename: citation.documentTitle,
+  })
+    ? "image"
+    : "text";
+}
+
 function isPdfFile(file: File) {
   return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 }
@@ -2442,16 +2471,25 @@ function isTextFile(file: File) {
   return file.type === "text/plain" || lowerName.endsWith(".txt");
 }
 
-function isSupportedDocumentFile(file: File) {
-  return isPdfFile(file) || isTextFile(file);
+function isImageFile(file: File) {
+  return Boolean(
+    resolveImageMimeType({
+      mimeType: file.type,
+      filename: file.name,
+    }),
+  );
 }
 
-function getPastedPdfFile(clipboardData: DataTransfer) {
-  const files = [...clipboardData.files];
-  const fileListPdf = files.find(isPdfFile);
+function isSupportedDocumentFile(file: File) {
+  return isPdfFile(file) || isTextFile(file) || isImageFile(file);
+}
 
-  if (fileListPdf) {
-    return { file: fileListPdf, inaccessibleFile: false };
+function getPastedDocumentFile(clipboardData: DataTransfer) {
+  const files = [...clipboardData.files];
+  const fileListDocument = files.find(isSupportedDocumentFile);
+
+  if (fileListDocument) {
+    return { file: fileListDocument, inaccessibleFile: false };
   }
 
   let inaccessibleFile = false;
@@ -2460,11 +2498,11 @@ function getPastedPdfFile(clipboardData: DataTransfer) {
     if (item.kind !== "file") continue;
 
     const file = item.getAsFile();
-    if (file && isPdfFile(file)) {
+    if (file && isSupportedDocumentFile(file)) {
       return { file, inaccessibleFile: false };
     }
 
-    if (!file && isPdfClipboardItem(item)) {
+    if (!file && isDocumentClipboardItem(item)) {
       inaccessibleFile = true;
     }
   }
@@ -2472,8 +2510,13 @@ function getPastedPdfFile(clipboardData: DataTransfer) {
   return { file: null, inaccessibleFile };
 }
 
-function isPdfClipboardItem(item: DataTransferItem) {
-  return item.type === "application/pdf" || item.type === "";
+function isDocumentClipboardItem(item: DataTransferItem) {
+  return (
+    item.type === "application/pdf" ||
+    item.type === "text/plain" ||
+    item.type.startsWith("image/") ||
+    item.type === ""
+  );
 }
 
 function shouldTreatPasteAsContext(value: string) {
