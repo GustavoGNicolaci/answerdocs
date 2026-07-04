@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { createSupabaseServerClient } from "@/lib/supabase-auth";
 import { ensureProfile } from "@/lib/workspace";
 import { POST } from "./route";
+
+const originalSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
 vi.mock("@/lib/supabase", () => ({
   getSupabaseAdmin: vi.fn(),
@@ -22,11 +24,20 @@ describe("signup route", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    process.env.NEXT_PUBLIC_SITE_URL = "https://answerdocs.example.com";
     vi.mocked(createSupabaseServerClient).mockResolvedValue({
       auth: { signUp },
     } as never);
     vi.mocked(getSupabaseAdmin).mockReturnValue(admin as never);
     vi.mocked(ensureProfile).mockResolvedValue({} as never);
+  });
+
+  afterEach(() => {
+    if (originalSiteUrl === undefined) {
+      delete process.env.NEXT_PUBLIC_SITE_URL;
+    } else {
+      process.env.NEXT_PUBLIC_SITE_URL = originalSiteUrl;
+    }
   });
 
   it("returns a friendly confirmation message and configured email redirect", async () => {
@@ -58,7 +69,8 @@ describe("signup route", () => {
         email: "user@example.com",
         options: expect.objectContaining({
           data: { full_name: "Gustavo" },
-          emailRedirectTo: "http://localhost/auth/confirm?next=%2F",
+          emailRedirectTo:
+            "https://answerdocs.example.com/auth/confirm?next=%2F",
         }),
       }),
     );
