@@ -29,6 +29,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
+  ChangeEvent,
   ClipboardEvent,
   DragEvent,
   FormEvent,
@@ -54,7 +55,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { LOCALIZED_CHAT_MESSAGES } from "@/lib/constants";
 import { detectResponseLanguage } from "@/lib/language";
-import type { ResponseLanguage } from "@/lib/types";
+import type { ChatContextAction, ResponseLanguage } from "@/lib/types";
 import { isUploadFileTooLarge } from "@/lib/upload-limits";
 import { cn, formatBytes } from "@/lib/utils";
 
@@ -92,6 +93,7 @@ type ChatTurn = {
   answer: string;
   citations: CitationItem[];
   language: ResponseLanguage;
+  contextAction?: ChatContextAction;
 };
 
 type UploadMode = "file" | "text";
@@ -129,6 +131,7 @@ export function RagWorkspace() {
   const { setLanguage, copy } = useInterfaceLanguage();
   const t = copy.workspace;
   const chatFormRef = useRef<HTMLFormElement>(null);
+  const contextualUploadInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -597,6 +600,7 @@ export function RagWorkspace() {
       const payload = await readPayload<{
         answer: string;
         citations: CitationItem[];
+        contextAction?: ChatContextAction;
       }>(response);
 
       setTurns((current) => [
@@ -607,6 +611,7 @@ export function RagWorkspace() {
           answer: payload.answer,
           citations: payload.citations,
           language: responseLanguage,
+          contextAction: payload.contextAction,
         },
       ]);
       setQuestion("");
@@ -800,12 +805,19 @@ export function RagWorkspace() {
     setIsMobileSidebarOpen(false);
   }
 
-  async function handleChatPdfFile(nextFile: File) {
+  async function handleChatDocumentFile(
+    nextFile: File,
+    options: { pdfOnly?: boolean } = {},
+  ) {
     setError(null);
     setNotice(null);
 
-    if (!isPdfFile(nextFile)) {
-      setError(t.attachPdf);
+    const unsupportedFile = options.pdfOnly
+      ? !isPdfFile(nextFile)
+      : !isSupportedDocumentFile(nextFile);
+
+    if (unsupportedFile) {
+      setError(options.pdfOnly ? t.attachPdf : t.chooseFile);
       return;
     }
 
@@ -826,6 +838,22 @@ export function RagWorkspace() {
     } finally {
       setUploadingChatAttachment(false);
     }
+  }
+
+  async function handleChatPdfFile(nextFile: File) {
+    await handleChatDocumentFile(nextFile, { pdfOnly: true });
+  }
+
+  function handleContextualUploadClick() {
+    contextualUploadInputRef.current?.click();
+  }
+
+  function handleContextualUploadChange(event: ChangeEvent<HTMLInputElement>) {
+    const nextFile = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!nextFile) return;
+
+    void handleChatDocumentFile(nextFile);
   }
 
   async function handlePastedChatContext(text: string) {
@@ -1942,6 +1970,28 @@ export function RagWorkspace() {
                             />
                           </div>
 
+                          {turn.contextAction === "upload_document" ? (
+                            <div className="mt-3">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                disabled={
+                                  documentControlsDisabled ||
+                                  uploadingChatAttachment
+                                }
+                                onClick={handleContextualUploadClick}
+                              >
+                                {uploadingChatAttachment ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Upload className="h-4 w-4" />
+                                )}
+                                {t.uploadContextAction}
+                              </Button>
+                            </div>
+                          ) : null}
+
                           {turn.citations.length > 0 ? (
                             <details className="group mt-4 rounded-2xl border border-border/80 bg-background/55 shadow-sm transition-all duration-200 open:bg-background/75">
                               <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-sm font-medium text-muted-foreground outline-none transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
@@ -2053,6 +2103,14 @@ export function RagWorkspace() {
                     </div>
                   ) : null}
                 </section>
+                <input
+                  ref={contextualUploadInputRef}
+                  type="file"
+                  accept="application/pdf,text/plain,.pdf,.txt"
+                  disabled={documentControlsDisabled || uploadingChatAttachment}
+                  className="sr-only"
+                  onChange={handleContextualUploadChange}
+                />
               </form>
             </div>
           </div>
@@ -2193,6 +2251,15 @@ function getChatDisplayTitle(title: string, fallback: string) {
 
 function isPdfFile(file: File) {
   return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function isTextFile(file: File) {
+  const lowerName = file.name.toLowerCase();
+  return file.type === "text/plain" || lowerName.endsWith(".txt");
+}
+
+function isSupportedDocumentFile(file: File) {
+  return isPdfFile(file) || isTextFile(file);
 }
 
 function getPastedPdfFile(clipboardData: DataTransfer) {

@@ -125,7 +125,11 @@ describe("chat route", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload).toEqual({ answer: NO_CONTEXT_ANSWER, citations: [] });
+    expect(payload).toEqual({
+      answer: NO_CONTEXT_ANSWER,
+      citations: [],
+      contextAction: "upload_document",
+    });
     expect(embedText).not.toHaveBeenCalled();
     expect(generateGroundedAnswer).not.toHaveBeenCalled();
     expect(generateConversationalAnswer).not.toHaveBeenCalled();
@@ -147,6 +151,7 @@ describe("chat route", () => {
     expect(payload).toEqual({
       answer: LOCALIZED_CHAT_MESSAGES.pt.noContext,
       citations: [],
+      contextAction: "upload_document",
     });
     expect(embedText).not.toHaveBeenCalled();
     expect(generateGroundedAnswer).not.toHaveBeenCalled();
@@ -343,9 +348,10 @@ describe("chat route", () => {
       rpcData: matches,
     });
     vi.mocked(embedText).mockResolvedValue(new Array(768).fill(0));
-    vi.mocked(generateGroundedAnswer).mockResolvedValue(
-      "Policy.pdf says refunds are available within 30 days [1].",
-    );
+    vi.mocked(generateGroundedAnswer).mockResolvedValue({
+      answer: "Refunds are available within 30 days, as stated in Policy.pdf.",
+      sourceIndexes: [1],
+    });
 
     const response = await POST(
       jsonRequest({
@@ -357,6 +363,8 @@ describe("chat route", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
+    expect(payload.answer).toBe("Refunds are available within 30 days.");
+    expect(payload.answer).not.toContain("Policy.pdf");
     expect(payload.citations).toHaveLength(1);
     expect(requireOwnedChat).toHaveBeenCalledWith(
       expect.anything(),
@@ -454,9 +462,10 @@ describe("chat route", () => {
       rpcData: matches,
     });
     vi.mocked(embedText).mockResolvedValue(new Array(768).fill(0));
-    vi.mocked(generateGroundedAnswer).mockResolvedValue(
-      "Policy.pdf says refunds are available within 30 days [1].",
-    );
+    vi.mocked(generateGroundedAnswer).mockResolvedValue({
+      answer: "Policy.pdf says refunds are available within 30 days.",
+      sourceIndexes: [1],
+    });
 
     const response = await POST(
       jsonRequest({
@@ -495,12 +504,14 @@ describe("chat route", () => {
     );
   });
 
-  it("limits returned citations and removes hidden markers", async () => {
+  it("limits returned citations and strips residual inline markers", async () => {
     mockSupabase({ readyDocumentCounts: [4, 1], rpcData: matches });
     vi.mocked(embedText).mockResolvedValue(new Array(768).fill(0));
-    vi.mocked(generateGroundedAnswer).mockResolvedValue(
-      "Policy.pdf covers refunds [1]. Handbook.pdf covers support [2]. Guide.pdf covers onboarding [3]. Terms.pdf covers renewal [4].",
-    );
+    vi.mocked(generateGroundedAnswer).mockResolvedValue({
+      answer:
+        "Policy.pdf covers refunds [1]. Handbook.pdf covers support [2]. Guide.pdf covers onboarding [3]. Terms.pdf covers renewal [4].",
+      sourceIndexes: [1, 2, 3, 4],
+    });
 
     const response = await POST(
       jsonRequest({
@@ -513,9 +524,9 @@ describe("chat route", () => {
 
     expect(response.status).toBe(200);
     expect(payload.citations).toHaveLength(3);
-    expect(payload.answer).toContain("[1]");
-    expect(payload.answer).toContain("[2]");
-    expect(payload.answer).toContain("[3]");
+    expect(payload.answer).not.toContain("[1]");
+    expect(payload.answer).not.toContain("[2]");
+    expect(payload.answer).not.toContain("[3]");
     expect(payload.answer).not.toContain("[4]");
   });
 });

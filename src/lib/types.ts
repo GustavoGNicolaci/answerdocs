@@ -58,6 +58,13 @@ export type Citation = {
 
 export type ResponseLanguage = "pt" | "en";
 
+export type GroundedAnswerResult = {
+  answer: string;
+  sourceIndexes: number[];
+};
+
+export type ChatContextAction = "upload_document";
+
 export type ConversationHistoryItem = {
   question: string;
   answer: string;

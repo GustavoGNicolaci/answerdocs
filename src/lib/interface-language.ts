@@ -151,6 +151,7 @@ export const INTERFACE_COPY = {
         "Ask about your documents or paste a PDF/text context",
       indexingContext: "Processing document. Scanned pages may take longer.",
       ask: "Ask",
+      uploadContextAction: "Upload document",
       dropPdf: "Drop PDF to add it to this folder",
       viewReferences: "View references",
       page: "Page",
@@ -365,6 +366,7 @@ export const INTERFACE_COPY = {
       indexingContext:
         "Processando documento. PÃ¡ginas escaneadas podem demorar mais.",
       ask: "Enviar",
+      uploadContextAction: "Adicionar documento",
       dropPdf: "Solte o PDF para adicioná-lo a esta pasta",
       viewReferences: "Ver referências",
       page: "Página",

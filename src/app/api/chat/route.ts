@@ -17,14 +17,20 @@ import {
   buildHistoryAnswerPrompt,
   buildRetrievalQuery,
   createCitations,
-  hasInvalidCitationIndexes,
+  getValidSourceIndexes,
   normalizeAnswer,
-  removeHiddenCitationMarkers,
+  removeDocumentTitleMentions,
+  removeInlineCitationMarkers,
 } from "@/lib/rag";
 import { sessionIdSchema } from "@/lib/session";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { getSystemHelpAnswer } from "@/lib/system-help";
-import type { ConversationHistoryItem, MatchDocumentChunk } from "@/lib/types";
+import type {
+  ChatContextAction,
+  Citation,
+  ConversationHistoryItem,
+  MatchDocumentChunk,
+} from "@/lib/types";
 import {
   loadSavedChatTurns,
   requireOwnedChat,
@@ -141,6 +147,12 @@ type LocalizedMessages = {
   copied: string;
 };
 
+type AnswerResult = {
+  answer: string;
+  citations: Citation[];
+  contextAction?: ChatContextAction;
+};
+
 async function answerFromScope({
   supabase,
   question,
@@ -157,7 +169,7 @@ async function answerFromScope({
   messages: LocalizedMessages;
   history: ConversationHistoryItem[];
   scope: AnswerScope;
-}) {
+}): Promise<AnswerResult> {
   const fallbackAnswer = messages.selectedDocumentsFallback;
 
   if (selectedDocumentIds.length > 0) {
@@ -188,24 +200,38 @@ async function answerFromScope({
     : messages.noContext;
 
   if (history.length > 0) {
-    const answer = normalizeAnswer(
-      await generateConversationalAnswer(
-        buildHistoryAnswerPrompt(question, history, {
-          fallbackAnswer: noDocumentFallback,
-          responseLanguage,
-        }),
-        {
-          fallbackAnswer: noDocumentFallback,
-          responseLanguage,
-        },
+    const answer = removeInlineCitationMarkers(
+      normalizeAnswer(
+        await generateConversationalAnswer(
+          buildHistoryAnswerPrompt(question, history, {
+            fallbackAnswer: noDocumentFallback,
+            responseLanguage,
+          }),
+          {
+            fallbackAnswer: noDocumentFallback,
+            responseLanguage,
+          },
+        ),
+        noDocumentFallback,
       ),
-      noDocumentFallback,
     );
 
-    return { answer, citations: [] };
+    return {
+      answer,
+      citations: [],
+      ...(answer === noDocumentFallback && !hasAnyReadyContext
+        ? { contextAction: "upload_document" as const }
+        : {}),
+    };
   }
 
-  return { answer: noDocumentFallback, citations: [] };
+  return {
+    answer: noDocumentFallback,
+    citations: [],
+    ...(!hasAnyReadyContext
+      ? { contextAction: "upload_document" as const }
+      : {}),
+  };
 }
 
 async function answerFromSelectedDocuments({
@@ -224,7 +250,7 @@ async function answerFromSelectedDocuments({
   fallbackAnswer: string;
   history: ConversationHistoryItem[];
   scope: AnswerScope;
-}) {
+}): Promise<AnswerResult> {
   const queryEmbedding = await embedText({
     text: buildRetrievalQuery(question, history),
     taskType: "RETRIEVAL_QUERY",
@@ -248,34 +274,41 @@ async function answerFromSelectedDocuments({
     return { answer: fallbackAnswer, citations: [] };
   }
 
-  const answer = normalizeAnswer(
-    await generateGroundedAnswer(
-      buildAnswerPrompt(question, matches, {
-        fallbackAnswer,
-        responseLanguage,
-        history,
-      }),
-      {
-        fallbackAnswer,
-        responseLanguage,
-      },
+  const groundedAnswer = await generateGroundedAnswer(
+    buildAnswerPrompt(question, matches, {
+      fallbackAnswer,
+      responseLanguage,
+      history,
+    }),
+    {
+      fallbackAnswer,
+      responseLanguage,
+    },
+  );
+  const answer = removeDocumentTitleMentions(
+    removeInlineCitationMarkers(
+      normalizeAnswer(groundedAnswer.answer, fallbackAnswer),
     ),
-    fallbackAnswer,
+    matches,
+  );
+  const sourceIndexes = getValidSourceIndexes(
+    groundedAnswer.sourceIndexes,
+    matches.length,
   );
   const citations =
-    answer === fallbackAnswer || hasInvalidCitationIndexes(answer, matches.length)
+    answer === fallbackAnswer
       ? []
-      : createCitations(matches, answer);
+      : createCitations(matches, sourceIndexes, {
+          question,
+          answer,
+        });
 
   if (answer !== fallbackAnswer && citations.length === 0) {
     return { answer: fallbackAnswer, citations: [] };
   }
 
   return {
-    answer:
-      citations.length > 0
-        ? removeHiddenCitationMarkers(answer, citations)
-        : fallbackAnswer,
+    answer: citations.length > 0 ? answer : fallbackAnswer,
     citations,
   };
 }

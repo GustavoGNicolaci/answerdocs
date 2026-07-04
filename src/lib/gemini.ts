@@ -1,4 +1,5 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
+import { z } from "zod";
 import {
   EMBEDDING_DIMENSIONS,
   FALLBACK_ANSWER,
@@ -8,7 +9,7 @@ import {
 } from "@/lib/constants";
 import { configurationError } from "@/lib/errors";
 import { getResponseLanguageName } from "@/lib/language";
-import type { ResponseLanguage } from "@/lib/types";
+import type { GroundedAnswerResult, ResponseLanguage } from "@/lib/types";
 
 let geminiClient: GoogleGenAI | null = null;
 
@@ -24,6 +25,11 @@ type GenerateAnswerOptions = {
   fallbackAnswer?: string;
   responseLanguage?: ResponseLanguage;
 };
+
+const groundedAnswerSchema = z.object({
+  answer: z.string().catch(""),
+  sourceIndexes: z.array(z.coerce.number().int()).catch([]),
+});
 
 export function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -79,7 +85,7 @@ export async function embedTexts(requests: EmbedRequest[]) {
 export async function generateGroundedAnswer(
   prompt: string,
   options: GenerateAnswerOptions | string = {},
-) {
+): Promise<GroundedAnswerResult> {
   const fallbackAnswer =
     typeof options === "string"
       ? options
@@ -93,14 +99,25 @@ export async function generateGroundedAnswer(
     contents: prompt,
     config: {
       maxOutputTokens: 900,
-      responseMimeType: "text/plain",
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          answer: { type: Type.STRING },
+          sourceIndexes: {
+            type: Type.ARRAY,
+            items: { type: Type.INTEGER },
+          },
+        },
+        required: ["answer", "sourceIndexes"],
+      },
       temperature: 0.2,
       systemInstruction:
-        `You are AnswerDocs, a careful document question-answering assistant. Answer in ${languageName}, matching the current user message. Use only the provided selected document context for document facts. Mention source file names when using facts, and cite only the necessary supporting snippets with bracketed citation numbers such as [1] and [2]. Never use more than ${MAX_PUBLIC_CITATIONS} citations. Never mention similarity, precision, confidence, ranking, scores, or percentages. If the context is insufficient, say exactly: ${fallbackAnswer}`,
+        `You are AnswerDocs, a careful document question-answering assistant. Return JSON only. Answer in ${languageName}, matching the current user message. Use only the provided selected document context for document facts. Do not mention source file names in the answer text; put the supporting source indexes in sourceIndexes instead, with at least 1 and at most ${MAX_PUBLIC_CITATIONS} indexes when the answer uses document facts. Never put bracketed numeric citation markers in the answer text. Never mention similarity, precision, confidence, ranking, scores, or percentages. If the context is insufficient, set answer exactly to: ${fallbackAnswer} and sourceIndexes to [].`,
     },
   });
 
-  return response.text?.trim() || "";
+  return parseGroundedAnswer(response.text ?? "");
 }
 
 export async function generateConversationalAnswer(
@@ -123,4 +140,35 @@ export async function generateConversationalAnswer(
   });
 
   return response.text?.trim() || "";
+}
+
+function parseGroundedAnswer(value: string): GroundedAnswerResult {
+  const trimmed = value.trim();
+  if (!trimmed) return { answer: "", sourceIndexes: [] };
+
+  try {
+    const parsed = groundedAnswerSchema.parse(JSON.parse(extractJson(trimmed)));
+    return {
+      answer: parsed.answer.trim(),
+      sourceIndexes: parsed.sourceIndexes,
+    };
+  } catch {
+    return {
+      answer: trimmed,
+      sourceIndexes: [],
+    };
+  }
+}
+
+function extractJson(value: string) {
+  const fenced = value.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+
+  const firstBrace = value.indexOf("{");
+  const lastBrace = value.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return value.slice(firstBrace, lastBrace + 1);
+  }
+
+  return value;
 }
