@@ -1,10 +1,11 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, createPartFromBase64 } from "@google/genai";
 import { z } from "zod";
 import {
   EMBEDDING_DIMENSIONS,
   FALLBACK_ANSWER,
   GEMINI_CHAT_MODEL,
   GEMINI_EMBEDDING_MODEL,
+  GEMINI_TRANSCRIPTION_MODEL,
   MAX_PUBLIC_CITATIONS,
 } from "@/lib/constants";
 import { configurationError } from "@/lib/errors";
@@ -29,6 +30,10 @@ type GenerateAnswerOptions = {
 const groundedAnswerSchema = z.object({
   answer: z.string().catch(""),
   sourceIndexes: z.array(z.coerce.number().int()).catch([]),
+});
+
+const transcriptionSchema = z.object({
+  text: z.string().catch(""),
 });
 
 export function getGeminiClient() {
@@ -142,6 +147,39 @@ export async function generateConversationalAnswer(
   return response.text?.trim() || "";
 }
 
+export async function transcribeAudio(input: {
+  data: Buffer;
+  mimeType: "audio/wav";
+}) {
+  const response = await getGeminiClient().models.generateContent({
+    model: GEMINI_TRANSCRIPTION_MODEL,
+    contents: [
+      [
+        "Transcribe only the spoken words in this audio.",
+        "Keep the original language.",
+        "Do not answer the question, summarize, translate, or add commentary.",
+        "Return JSON only, matching the provided schema.",
+        "If speech is not understandable, return an empty string for text.",
+      ].join("\n"),
+      createPartFromBase64(input.data.toString("base64"), input.mimeType),
+    ],
+    config: {
+      maxOutputTokens: 512,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          text: { type: Type.STRING },
+        },
+        required: ["text"],
+      },
+      temperature: 0,
+    },
+  });
+
+  return parseTranscription(response.text ?? "");
+}
+
 function parseGroundedAnswer(value: string): GroundedAnswerResult {
   const trimmed = value.trim();
   if (!trimmed) return { answer: "", sourceIndexes: [] };
@@ -158,6 +196,22 @@ function parseGroundedAnswer(value: string): GroundedAnswerResult {
       sourceIndexes: [],
     };
   }
+}
+
+function parseTranscription(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  try {
+    const parsed = transcriptionSchema.parse(JSON.parse(extractJson(trimmed)));
+    return normalizeTranscription(parsed.text);
+  } catch {
+    return normalizeTranscription(trimmed);
+  }
+}
+
+function normalizeTranscription(value: string) {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function extractJson(value: string) {

@@ -15,6 +15,7 @@ import {
   Loader2,
   Menu,
   MessageSquare,
+  Mic,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -22,6 +23,7 @@ import {
   Quote,
   Search,
   Send,
+  Square,
   Settings,
   Trash2,
   Upload,
@@ -58,6 +60,12 @@ import { detectResponseLanguage } from "@/lib/language";
 import type { ChatContextAction, ResponseLanguage } from "@/lib/types";
 import { isUploadFileTooLarge } from "@/lib/upload-limits";
 import { cn, formatBytes } from "@/lib/utils";
+import { MAX_VOICE_AUDIO_BYTES, MAX_VOICE_RECORDING_SECONDS } from "@/lib/voice-limits";
+import {
+  startWavRecording,
+  type VoiceRecorder,
+  VoiceRecorderError,
+} from "@/lib/voice-recorder";
 
 const SESSION_STORAGE_KEY = "answerdocs.sessionId";
 const CHAT_HISTORY_TURN_LIMIT = 6;
@@ -97,6 +105,7 @@ type ChatTurn = {
 };
 
 type UploadMode = "file" | "text";
+type VoiceState = "idle" | "recording" | "transcribing";
 
 type AuthUser = {
   id: string;
@@ -134,6 +143,8 @@ export function RagWorkspace() {
   const contextualUploadInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const copyFeedbackTimerRef = useRef<number | null>(null);
+  const voiceRecorderRef = useRef<VoiceRecorder | null>(null);
+  const voiceRecordingTimerRef = useRef<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
@@ -165,6 +176,7 @@ export function RagWorkspace() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [draggingChatFile, setDraggingChatFile] = useState(false);
   const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null);
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,10 +217,12 @@ export function RagWorkspace() {
     0,
   );
   const isInitialChat = turns.length === 0 && !asking;
+  const voiceBusy = voiceState !== "idle";
   const canSubmitQuestion =
     (isAuthenticated ? Boolean(activeChatId) : Boolean(sessionId)) &&
     !asking &&
     !uploadingChatAttachment &&
+    !voiceBusy &&
     question.trim().length > 0;
   const documentControlsDisabled =
     uploading || !sessionId || (isAuthenticated && !activeFolderId);
@@ -449,6 +463,14 @@ export function RagWorkspace() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      clearVoiceRecordingTimer();
+      voiceRecorderRef.current?.cancel();
+      voiceRecorderRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isMobileSidebarOpen && !isMobileFoldersOpen) return;
 
     function handleEscape(event: globalThis.KeyboardEvent) {
@@ -468,6 +490,31 @@ export function RagWorkspace() {
     setNotice(null);
     setError(t.fileTooLarge);
     return false;
+  }
+
+  function clearVoiceRecordingTimer() {
+    if (!voiceRecordingTimerRef.current) return;
+    window.clearTimeout(voiceRecordingTimerRef.current);
+    voiceRecordingTimerRef.current = null;
+  }
+
+  function getVoiceStartErrorMessage(recordingError: unknown) {
+    if (isMicrophonePermissionError(recordingError)) {
+      return t.voicePermissionDenied;
+    }
+
+    return t.voiceUnsupported;
+  }
+
+  function getVoiceTranscriptionErrorMessage(transcriptionError: unknown) {
+    if (
+      transcriptionError instanceof VoiceRecorderError ||
+      transcriptionError instanceof Error
+    ) {
+      return transcriptionError.message || t.voiceNoSpeech;
+    }
+
+    return t.voiceNoSpeech;
   }
 
   async function indexDocument(input: {
@@ -873,6 +920,90 @@ export function RagWorkspace() {
       setError(getClientError(requestError));
     } finally {
       setUploadingChatAttachment(false);
+    }
+  }
+
+  async function handleVoiceButtonClick() {
+    if (voiceState === "recording") {
+      await stopVoiceRecording();
+      return;
+    }
+
+    if (voiceState !== "idle") return;
+    await startVoiceInput();
+  }
+
+  async function startVoiceInput() {
+    if (asking || uploadingChatAttachment) return;
+    if (isAuthenticated && !activeChatId) {
+      setError(t.openChatBeforeAsking);
+      return;
+    }
+    if (!isAuthenticated && !sessionId) {
+      setError(t.sessionNotReady);
+      return;
+    }
+
+    setError(null);
+    setNotice(null);
+
+    try {
+      const recorder = await startWavRecording();
+      voiceRecorderRef.current = recorder;
+      setVoiceState("recording");
+
+      clearVoiceRecordingTimer();
+      voiceRecordingTimerRef.current = window.setTimeout(() => {
+        void stopVoiceRecording();
+      }, MAX_VOICE_RECORDING_SECONDS * 1000);
+    } catch (recordingError) {
+      setVoiceState("idle");
+      setError(getVoiceStartErrorMessage(recordingError));
+    }
+  }
+
+  async function stopVoiceRecording() {
+    const recorder = voiceRecorderRef.current;
+    if (!recorder) {
+      setVoiceState("idle");
+      return;
+    }
+
+    voiceRecorderRef.current = null;
+    clearVoiceRecordingTimer();
+    setVoiceState("transcribing");
+    setError(null);
+    setNotice(null);
+
+    try {
+      const audio = await recorder.stop();
+      if (audio.size > MAX_VOICE_AUDIO_BYTES) {
+        throw new Error(t.voiceTooLarge);
+      }
+
+      const formData = new FormData();
+      formData.append("audio", audio, "voice.wav");
+
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await readPayload<{ text: string }>(response);
+      const transcription = payload.text.trim();
+
+      if (!transcription) {
+        throw new VoiceRecorderError(t.voiceNoSpeech);
+      }
+
+      setQuestion((current) =>
+        current.trim()
+          ? `${current.trimEnd()}\n${transcription}`
+          : transcription,
+      );
+    } catch (transcriptionError) {
+      setError(getVoiceTranscriptionErrorMessage(transcriptionError));
+    } finally {
+      setVoiceState("idle");
     }
   }
 
@@ -2072,31 +2203,76 @@ export function RagWorkspace() {
                     onKeyDown={handleQuestionKeyDown}
                     onPaste={handleQuestionPaste}
                     placeholder={t.composerPlaceholder}
-                    className="min-h-[72px] border-0 bg-transparent py-3 pl-10 pr-24 text-sm leading-6 shadow-none focus-visible:ring-0 sm:min-h-24 sm:pl-11 sm:pr-28"
+                    className="min-h-[72px] border-0 bg-transparent py-3 pl-10 pr-36 text-sm leading-6 shadow-none focus-visible:ring-0 sm:min-h-24 sm:pl-11 sm:pr-40"
                     disabled={
                       asking ||
                       uploadingChatAttachment ||
+                      voiceState === "transcribing" ||
                       (isAuthenticated ? !activeChatId : !sessionId)
                     }
                   />
-                  {uploadingChatAttachment ? (
+                  {uploadingChatAttachment || voiceBusy ? (
                     <div className="absolute bottom-2.5 left-4 flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-foreground" />
-                      {t.indexingContext}
+                      {voiceState === "recording" ? (
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" />
+                      ) : (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-foreground" />
+                      )}
+                      {uploadingChatAttachment
+                        ? t.indexingContext
+                        : voiceState === "recording"
+                          ? t.voiceRecording
+                          : t.voiceTranscribing}
                     </div>
                   ) : null}
-                  <Button
-                    type="submit"
-                    className="absolute right-2 top-1/2 h-8 -translate-y-1/2 px-3 sm:right-2.5 sm:px-4"
-                    disabled={!canSubmitQuestion}
-                  >
-                    {asking ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                    {t.ask}
-                  </Button>
+                  <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5 sm:right-2.5">
+                    <Button
+                      type="button"
+                      variant={voiceState === "recording" ? "secondary" : "ghost"}
+                      size="icon"
+                      className={cn(
+                        "h-8 w-8 shrink-0",
+                        voiceState === "recording" && "text-destructive",
+                      )}
+                      aria-label={
+                        voiceState === "recording"
+                          ? t.stopVoiceInput
+                          : t.startVoiceInput
+                      }
+                      title={
+                        voiceState === "recording"
+                          ? t.stopVoiceInput
+                          : t.startVoiceInput
+                      }
+                      disabled={
+                        voiceState === "transcribing" ||
+                        asking ||
+                        uploadingChatAttachment ||
+                        (isAuthenticated ? !activeChatId : !sessionId)
+                      }
+                      onClick={() => void handleVoiceButtonClick()}
+                    >
+                      {voiceState === "transcribing" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : voiceState === "recording" ? (
+                        <Square className="h-3.5 w-3.5 fill-current" />
+                      ) : (
+                        <Mic className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Button
+                      type="submit"
+                      className="h-8 px-3 sm:px-4"
+                      disabled={!canSubmitQuestion}
+                    >
+                      {asking ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      {t.ask}
+                    </Button>
+                  </div>
                   {draggingChatFile ? (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-3xl bg-background/85 text-sm font-medium text-foreground backdrop-blur-sm">
                       {t.dropPdf}
@@ -2305,6 +2481,15 @@ function shouldTreatPasteAsContext(value: string) {
 
 function hasDraggedFiles(event: DragEvent<HTMLElement>) {
   return [...event.dataTransfer.types].includes("Files");
+}
+
+function isMicrophonePermissionError(error: unknown) {
+  return (
+    error instanceof DOMException &&
+    (error.name === "NotAllowedError" ||
+      error.name === "PermissionDeniedError" ||
+      error.name === "SecurityError")
+  );
 }
 
 async function copyTextToClipboard(text: string) {

@@ -1,0 +1,3 @@
+export const MAX_VOICE_RECORDING_SECONDS = 45;
+export const MAX_VOICE_AUDIO_MB = 8;
+export const MAX_VOICE_AUDIO_BYTES = MAX_VOICE_AUDIO_MB * 1024 * 1024;

@@ -11,6 +11,9 @@ export const GEMINI_CHAT_MODEL =
 export const GEMINI_OCR_MODEL =
   process.env.GEMINI_OCR_MODEL ?? GEMINI_CHAT_MODEL;
 
+export const GEMINI_TRANSCRIPTION_MODEL =
+  process.env.GEMINI_TRANSCRIPTION_MODEL ?? "gemini-3.5-flash";
+
 export const GEMINI_EMBEDDING_MODEL =
   process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-2";
 
