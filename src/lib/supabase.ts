@@ -4,11 +4,11 @@ import { configurationError } from "@/lib/errors";
 let supabaseAdmin: SupabaseClient | null = null;
 
 export function getSupabaseAdmin() {
-  const url = process.env.SUPABASE_URL;
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url) {
-    throw configurationError("SUPABASE_URL is missing.");
+    throw configurationError("SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL is missing.");
   }
 
   if (!serviceRoleKey) {

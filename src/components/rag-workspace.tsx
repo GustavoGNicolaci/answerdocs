@@ -2182,7 +2182,10 @@ export function RagWorkspace() {
               <form
                 ref={chatFormRef}
                 onSubmit={handleAsk}
-                className={cn("shrink-0 space-y-3", !isInitialChat && "mt-3 sm:mt-4")}
+                className={cn(
+                  "min-w-0 shrink-0 space-y-3",
+                  !isInitialChat && "mt-3 sm:mt-4",
+                )}
               >
                 <section
                   aria-label={t.composerLabel}
@@ -2191,19 +2194,19 @@ export function RagWorkspace() {
                   onDragLeave={handleChatDragLeave}
                   onDrop={handleChatDrop}
                   className={cn(
-                    "relative rounded-3xl border border-border/80 bg-card/85 shadow-[var(--shadow-soft)] transition-all duration-200 focus-within:border-ring/80 focus-within:ring-4 focus-within:ring-ring/10",
+                    "relative w-full max-w-full overflow-hidden rounded-3xl border border-border/80 bg-card/85 shadow-[var(--shadow-soft)] transition-all duration-200 focus-within:border-ring/80 focus-within:ring-4 focus-within:ring-ring/10",
                     draggingChatFile &&
                       "border-primary bg-secondary shadow-[var(--shadow-soft)]",
                   )}
                 >
-                  <Search className="pointer-events-none absolute left-4 top-3.5 h-4 w-4 text-muted-foreground" />
+                  <Search className="pointer-events-none absolute left-3.5 top-3.5 h-4 w-4 text-muted-foreground sm:left-4" />
                   <Textarea
                     value={question}
                     onChange={(event) => setQuestion(event.target.value)}
                     onKeyDown={handleQuestionKeyDown}
                     onPaste={handleQuestionPaste}
                     placeholder={t.composerPlaceholder}
-                    className="min-h-[72px] border-0 bg-transparent py-3 pl-10 pr-36 text-sm leading-6 shadow-none focus-visible:ring-0 sm:min-h-24 sm:pl-11 sm:pr-40"
+                    className="box-border min-h-[68px] max-w-full border-0 bg-transparent py-2.5 pl-9 pr-24 text-sm leading-6 shadow-none focus-visible:ring-0 sm:min-h-24 sm:py-3 sm:pl-11 sm:pr-40"
                     disabled={
                       asking ||
                       uploadingChatAttachment ||
@@ -2212,26 +2215,28 @@ export function RagWorkspace() {
                     }
                   />
                   {uploadingChatAttachment || voiceBusy ? (
-                    <div className="absolute bottom-2.5 left-4 flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="absolute bottom-2 left-3.5 right-24 flex min-w-0 items-center gap-2 truncate text-xs text-muted-foreground sm:bottom-2.5 sm:left-4 sm:right-40">
                       {voiceState === "recording" ? (
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-destructive" />
+                        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-destructive" />
                       ) : (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-foreground" />
+                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-foreground" />
                       )}
-                      {uploadingChatAttachment
-                        ? t.indexingContext
-                        : voiceState === "recording"
-                          ? t.voiceRecording
-                          : t.voiceTranscribing}
+                      <span className="truncate">
+                        {uploadingChatAttachment
+                          ? t.indexingContext
+                          : voiceState === "recording"
+                            ? t.voiceRecording
+                            : t.voiceTranscribing}
+                      </span>
                     </div>
                   ) : null}
-                  <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5 sm:right-2.5">
+                  <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 sm:gap-1.5 sm:right-2.5">
                     <Button
                       type="button"
                       variant={voiceState === "recording" ? "secondary" : "ghost"}
                       size="icon"
                       className={cn(
-                        "h-8 w-8 shrink-0",
+                        "h-8 w-8 shrink-0 sm:h-8 sm:w-8",
                         voiceState === "recording" && "text-destructive",
                       )}
                       aria-label={
@@ -2262,15 +2267,18 @@ export function RagWorkspace() {
                     </Button>
                     <Button
                       type="submit"
-                      className="h-8 px-3 sm:px-4"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 px-0 sm:w-auto sm:px-4"
                       disabled={!canSubmitQuestion}
+                      aria-label={t.ask}
+                      title={t.ask}
                     >
                       {asking ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <Send className="h-4 w-4" />
                       )}
-                      {t.ask}
+                      <span className="hidden sm:inline">{t.ask}</span>
                     </Button>
                   </div>
                   {draggingChatFile ? (
